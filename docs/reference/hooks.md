@@ -40,4 +40,6 @@ The Claude adapter can compose `preferences` with hook changes in the same setti
 
 If the workspace directory is a link to an independently verified bundle, supply its canonical absolute `expectedPhysicalDirectory` under `accountHome`. Only the final workspace path component may be a link. The participant may switch it during `stage`; the package checks the selected destination after staging and before and after each native command. Without an explicit pin the source must be a physical workspace directory.
 
+On Darwin, first registration also accepts an absent settings file, `{}`, or a document containing only well-formed local marketplace and plugin enablement dictionaries. Other partial settings documents do not qualify under this rule.
+
 Run `npm run test:hooks` for TypeScript declaration checks, independent adapter runs, fixture execution, restart tests and mutation probes. The offline fixture starts a real local process; its event dispatcher stands in for the harness. The opt-in Darwin probe runs the pinned native CLI with synthetic profiles and network and keychain access denied: `python3 test/adapters/claude/probes/registration-darwin.py /absolute/path/to/claude`. It checks project registration, not interactive event dispatch.

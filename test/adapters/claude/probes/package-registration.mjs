@@ -9,8 +9,9 @@ import { applyWorkspaceHooks,applyPreparedWorkspaceHooks,inspectWorkspaceHookOpe
 
 const [base,executable,encoded,mode] = process.argv.slice(2), binary=fs.realpathSync(executable), prefix = JSON.parse(encoded), mac=process.platform==='darwin';
 assert.ok(mac ? prefix[0] === '/usr/bin/sandbox-exec' : process.platform === 'linux' && process.getuid() !== 0 && fs.existsSync('/.dockerenv') && prefix.length === 0);
-const suffix = mode === 'alias' ? '-alias' : '';
-const root = path.join(base,'package-project'+suffix), home = path.join(base,'package-home'+suffix), directory = path.join(root,'market');
+const suffix = mode === 'alias' ? '-alias' : '', fresh = ['empty','missing','declarations'].includes(mode);
+const label=mode ? '-'+mode : '';
+const root = path.join(base,'package-project'+label), home = path.join(base,'package-home'+label), directory = path.join(root,'market');
 const write = (f,v) => { fs.mkdirSync(path.dirname(f),{recursive:true}); fs.writeFileSync(f,JSON.stringify(v)); };
 fs.mkdirSync(home); fs.mkdirSync(root);
 const oldBundle = path.join(home,'store','initial'), newBundle = path.join(home,'store','updated');
@@ -19,8 +20,8 @@ if (suffix) { fs.mkdirSync(oldBundle,{recursive:true});link(oldBundle); }
 const source = path.join(directory,'subject/.claude-plugin/plugin.json');
 const settingsFile = path.join(root,'.claude/settings.json');
 const foreign = {hooks:[{type:'command',command:'printf neighbor'}]};
-const initial = mac ? {enableAllProjectMcpServers:true,skillOverrides:{fixture:'off'},enabledPlugins:{'neighbor@other':false},extraKnownMarketplaces:{},hooks:{Stop:[foreign]}} : {enabledPlugins:{'neighbor@other':false},hooks:{PreToolUse:[{matcher:'Write',...foreign}]}};
-if(mac) initial.hooks.PostToolUse = [foreign,{matcher:'mcp__sample_tools__(read_one|write_two)',hooks:[...foreign.hooks,{type:'command',command:'printf after',timeout:4}]},foreign];
+const initial = fresh ? (mode==='declarations' ? {enabledPlugins:{'neighbor@other':false},extraKnownMarketplaces:{other:{source:{source:'directory',path:path.join(root,'other')}}}} : {}) : mac ? {enableAllProjectMcpServers:true,skillOverrides:{fixture:'off'},enabledPlugins:{'neighbor@other':false},extraKnownMarketplaces:{},hooks:{Stop:[foreign]}} : {enabledPlugins:{'neighbor@other':false},hooks:{PreToolUse:[{matcher:'Write',...foreign}]}};
+if(mac && !fresh) initial.hooks.PostToolUse = [foreign,{matcher:'mcp__sample_tools__(read_one|write_two)',hooks:[...foreign.hooks,{type:'command',command:'printf after',timeout:4}]},foreign];
 write(path.join(directory,'.claude-plugin/marketplace.json'),{name:'fixture-package',owner:{name:'Fixture'},plugins:[{name:'subject',source:'./subject'}]});
 write(settingsFile,initial);
 const original = cp.spawnSync;
@@ -40,16 +41,18 @@ const input = {root,target:'claude',enabled:true,preferences:{enableProjectServe
   {owner:'after',event:'PostToolUse',matcher:'mcp__sample_tools__(read_one|write_two)',command:'printf managed-after'},
   {owner:'failure',event:'PostToolUseFailure',matcher:'AskUserQuestion|AskQuestion|request_user_input',command:'printf failure',timeout:30},
 ],registration};
-const bad = structuredClone(initial); if(mac) bad.hooks.PostToolUse[1].matcher = 'mcp__sample_tools__(read_.*|write_two)'; else bad.hooks.PreToolUse[0].extra=true;
+const bad = structuredClone(initial); if(fresh) bad.externalField=true; else if(mac) bad.hooks.PostToolUse[1].matcher = 'mcp__sample_tools__(read_.*|write_two)'; else bad.hooks.PreToolUse[0].extra=true;
 write(settingsFile,bad);
 assert.throws(() => applyWorkspaceHooks(input),/Unsupported project settings/);
 assert.equal(calls.length,0); assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile)),bad);
 assert.equal(fs.existsSync(path.join(root,'.agent-hands')),false); assert.deepEqual(fs.readdirSync(home),suffix?['store']:[]);
 write(settingsFile,initial);
+if(mode==='missing') fs.unlinkSync(settingsFile);
 assert.equal(planWorkspaceHooks(input).changed,true); assert.equal(calls.length,0);
-const beforeInstall = fs.readFileSync(settingsFile);
+const currentBytes=()=>fs.existsSync(settingsFile)?fs.readFileSync(settingsFile):null;
+const beforeInstall = currentBytes();
 assert.throws(() => applyWorkspaceHooks(input),/External hook step failed/);
-assert.deepEqual(fs.readFileSync(settingsFile),beforeInstall);assert.equal(fs.existsSync(path.join(home,'.claude/plugins/known_marketplaces.json')),false);
+assert.deepEqual(currentBytes(),beforeInstall);assert.equal(fs.existsSync(path.join(home,'.claude/plugins/known_marketplaces.json')),false);
 assert.equal(fs.existsSync(path.join(root,'.agent-hands/hooks/claude/registration.json')),false);
 write(source,{name:'subject',version:'1.0.0'});calls.length=0;
 const applied = await applyPreparedWorkspaceHooks(prepareWorkspaceHooks(input),{id:'native-probe',async stage(){
@@ -60,9 +63,10 @@ const applied = await applyPreparedWorkspaceHooks(prepareWorkspaceHooks(input),{
 assert.equal(applied.changed,true); assert.deepEqual(calls.map(c=>c[1]),[0,0]);
 assert.equal(applyWorkspaceHooks(input).changed,false); assert.equal(calls.length,2);
 const settings = JSON.parse(fs.readFileSync(settingsFile));
-if(mac) assert.deepEqual(settings.hooks.Stop[0],foreign); else assert.deepEqual(settings.hooks.PreToolUse[0],initial.hooks.PreToolUse[0]);
-assert.equal(settings.enabledPlugins['neighbor@other'],false);
-if(mac) assert.deepEqual(settings.hooks.PostToolUse.slice(0,initial.hooks.PostToolUse.length),initial.hooks.PostToolUse);
+if(!fresh) { if(mac) assert.deepEqual(settings.hooks.Stop[0],foreign); else assert.deepEqual(settings.hooks.PreToolUse[0],initial.hooks.PreToolUse[0]); }
+assert.equal(settings.enabledPlugins['neighbor@other'],initial.enabledPlugins?.['neighbor@other']);
+if(mode==='declarations') assert.deepEqual(settings.extraKnownMarketplaces.other,initial.extraKnownMarketplaces.other);
+if(mac && !fresh) assert.deepEqual(settings.hooks.PostToolUse.slice(0,initial.hooks.PostToolUse.length),initial.hooks.PostToolUse);
 assert.equal(settings.enableAllProjectMcpServers,true);assert.equal(settings.skillOverrides.example,'off');
 assert.equal(settings.enabledPlugins['subject@fixture-package'],true);
 const registry = path.join(home,'.claude/plugins/installed_plugins.json');

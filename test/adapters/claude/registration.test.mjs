@@ -33,6 +33,8 @@ assert.ok(!verified(success,7));
 console.log('Registration evidence checks passed');
 
 const mac = { ...request,platform:'darwin',binarySha256:'85d8c08707fcfd1e78ffa0204eefbc6ec9e4fe22f375fb2767ef85d957ed3161' };
+assert.ok(registrationPostcondition(mac,'{}')(JSON.stringify({enabledPlugins:{'subject@market':true}})));
+for (const shape of [{extra:true},{hooks:{}},{enabledPlugins:{'subject@market':0}},{extraKnownMarketplaces:{market:{source:{source:'remote',path:'/market'}}}}]) assert.throws(()=>registrationPostcondition(mac,JSON.stringify(shape)),/project settings/);
 const group = (matcher,timeout) => ({ ...(matcher ? { matcher } : {}),hooks:[{ type:'command',command:'first',...(timeout ? { timeout } : {}) },{ type:'command',command:'second' }] });
 const question = 'AskUserQuestion|AskQuestion|request_user_input';
 const macSettings = { enableAllProjectMcpServers:true,skillOverrides:{ fixture:'off' }, enabledPlugins:{ 'neighbor@market':true,'other@market':false },extraKnownMarketplaces:{}, hooks:{
