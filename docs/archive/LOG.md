@@ -8,3 +8,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="ah-2"></a>`AH-2-repository-navigation` · 2026-11-21 · completed · — · Locate and inspect workspace repositories
 - <a id="ah-3"></a>`AH-3-workspace-resources` · 2026-11-21 · completed · — · Apply workspace resources with explicit ownership
 - <a id="ah-4"></a>`AH-4-runtime-hooks` · 2026-11-21 · completed · — · Run workspace hooks under explicit controls
+- <a id="ah-5"></a>`AH-5-rules-and-voice` · 2026-11-21 · completed · — · Provide English rules and configurable voice
