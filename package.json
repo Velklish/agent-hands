@@ -31,7 +31,7 @@
     "test:layout": "npm run build && npm run test:layout:types && node --test test/*.test.mjs test/adapters/*/*.test.mjs",
     "test:layout:types": "tsc --ignoreConfig --noEmit --strict --module NodeNext test/contract.mts",
     "test:voice": "python3 -B -m unittest discover -s profiles/my-voice/tests",
-    "test:hooks": "npm run build && npm run test:layout:types && node --test test/hooks/*.test.mjs test/adapters/claude/registration.test.mjs && node test/hooks/mutation-probes.mjs",
+    "test:hooks": "npm run build && npm run test:layout:types && node --test test/hooks/*.test.mjs test/adapters/*/hooks.test.mjs test/adapters/claude/registration.test.mjs && node test/hooks/mutation-probes.mjs",
     "test:all": "npm test && node test/git/mutation-probes.mjs && node test/hooks/mutation-probes.mjs && npm run test:package",
     "test:package": "node scripts/test-package.mjs"
   },

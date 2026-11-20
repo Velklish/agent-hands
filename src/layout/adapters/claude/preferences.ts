@@ -7,6 +7,10 @@ const dict = (v:unknown): v is Dict => !!v && typeof v === 'object' && !Array.is
 const keys = ['enableAllProjectMcpServers','extraKnownMarketplaces','enabledPlugins','skillOverrides'];
 function fields(wanted:WorkspacePreferences) {
   const next: Dict = {};
+  if (Object.keys(wanted).some(k => !['enableProjectServers','disabledSkills','enabledPlugins','localMarketplaces'].includes(k))) throw new TypeError('Unknown project preference');
+  if (wanted.localMarketplaces !== undefined && !dict(wanted.localMarketplaces)) throw new TypeError('Invalid local marketplaces');
+  if (wanted.enabledPlugins !== undefined && !dict(wanted.enabledPlugins)) throw new TypeError('Invalid plugin selection');
+  if (wanted.disabledSkills !== undefined && (!Array.isArray(wanted.disabledSkills) || wanted.disabledSkills.some(s => typeof s !== 'string' || !s))) throw new TypeError('Invalid skill selection');
   if (wanted.enableProjectServers !== undefined) {
     if (typeof wanted.enableProjectServers !== 'boolean') throw new TypeError('Invalid project server selection');
     next.enableAllProjectMcpServers = wanted.enableProjectServers;

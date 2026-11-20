@@ -20,6 +20,8 @@ const dictionary = (value: unknown, accepts: (key: string, entry: unknown) => bo
 const source = (v: unknown) => record(v) && keys(v,['source']) && record(v.source) && keys(v.source,['source','path']) && v.source.source === 'directory' && typeof v.source.path === 'string' && v.source.path.startsWith('/');
 const callback = (v: unknown, timeouts: readonly number[]) => record(v) && keys(v,['type','command','timeout']) && v.type === 'command' && typeof v.command === 'string' && v.command.length > 0 && (!Object.hasOwn(v,'timeout') || (typeof v.timeout === 'number' && timeouts.includes(v.timeout)));
 const question = 'AskUserQuestion|AskQuestion|request_user_input';
+const identifier = '[a-z][a-z0-9]*(?:_[a-z0-9]+)*';
+const pairedTools = new RegExp(`^mcp__${identifier}__\\(${identifier}\\|${identifier}\\)$`);
 const macMatchers: Record<string,readonly string[]> = {
   SessionStart:['startup|resume'], Stop:[], PreToolUse:[question,'Write'],
   PostToolUse:[question], PostToolUseFailure:[question],
@@ -30,7 +32,8 @@ const macKeys = Object.keys({ hooks:true,enableAllProjectMcpServers:true,skillOv
 function group(value: unknown, event: string, mac: boolean) {
   if (!record(value) || !keys(value,['matcher','hooks']) || !Array.isArray(value.hooks) || !value.hooks.every(row => callback(row,mac ? [4,30] : [4]))) return false;
   if (!mac) return event === 'PreToolUse' && value.matcher === 'Write';
-  return Object.hasOwn(macMatchers,event) && (!Object.hasOwn(value,'matcher') || (typeof value.matcher === 'string' && macMatchers[event].includes(value.matcher)));
+  return Object.hasOwn(macMatchers,event) && (!Object.hasOwn(value,'matcher') || (typeof value.matcher === 'string' && (macMatchers[event].includes(value.matcher) ||
+    (event === 'PostToolUse' && pairedTools.test(value.matcher)))));
 }
 
 function readSettings(text: string, platform: string): Fields {

@@ -7,6 +7,7 @@ How agent-hands works today — from the code, not intention. Intent and rationa
 | [Foundation](#foundation) | Current repository contents and verification |
 | [Repository navigation](repository-navigation.md) | Lookup, clone, explicit updates and inspection |
 | [Workspace resources](layout.md) | Prepared input, native layouts and ownership |
+| [Workspace hooks](hooks.md) | Controlled callback registration, batches and transaction recovery |
 | [Planning boundaries](#planning-boundaries) | Areas reserved for future implementation |
 | [Personal voice profile](../../profiles/my-voice/README.md) | Standalone calibration and local profile application |
 

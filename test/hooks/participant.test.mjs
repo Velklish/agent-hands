@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { applyPreparedWorkspaceHooks, prepareWorkspaceHooks, recoverWorkspaceHooks } from 'agent-hands';
+import { applyPreparedWorkspaceHooks, prepareWorkspaceHooks, recoverWorkspaceHooks, inspectWorkspaceHookOperation } from 'agent-hands';
 
 const file = fileURLToPath(import.meta.url);
 function participant(root,crash) {
@@ -36,6 +36,7 @@ if (process.argv[2] === 'child') {
     fs.writeFileSync(path.join(root,'manifest'),'first'); fs.symlinkSync('first',path.join(root,'alias'));
     const run = phase => spawnSync(process.execPath,[file,'child',root,phase],{encoding:'utf8'});
     assert.equal(run(phase).status,phase === 'stage' ? 71 : 72);
+    assert.deepEqual(inspectWorkspaceHookOperation({root}),{pending:true,registration:false,targets:['claude']});
     assert.throws(() => recoverWorkspaceHooks({root,target:'claude'}),/original transaction participant/);
     const retry = run('recover'); assert.equal(retry.status,0,retry.stderr);
     const expected = phase === 'stage' ? 'first' : 'second';
@@ -43,5 +44,6 @@ if (process.argv[2] === 'child') {
     assert.equal(fs.readlinkSync(path.join(root,'alias')),expected);
     assert.equal(fs.existsSync(path.join(root,'.claude/settings.json')),phase === 'finish');
     assert.equal(fs.existsSync(path.join(root,'peer.json')),false);
+    assert.deepEqual(inspectWorkspaceHookOperation({root}),{pending:false,registration:false});
   } finally { fs.rmSync(root,{recursive:true,force:true}); }
 }

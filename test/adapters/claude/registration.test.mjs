@@ -32,7 +32,7 @@ const mac = { ...request,platform:'darwin',binarySha256:'85d8c08707fcfd1e78ffa02
 const group = (matcher,timeout) => ({ ...(matcher ? { matcher } : {}),hooks:[{ type:'command',command:'first',...(timeout ? { timeout } : {}) },{ type:'command',command:'second' }] });
 const question = 'AskUserQuestion|AskQuestion|request_user_input';
 const macSettings = { enableAllProjectMcpServers:true,skillOverrides:{ fixture:'off' }, enabledPlugins:{ 'neighbor@market':true,'other@market':false },extraKnownMarketplaces:{}, hooks:{
-  SessionStart:[group('startup|resume',4)],Stop:[group(null)],PreToolUse:[group('Write',4),group(question,30)],PostToolUse:[group(question,30)],PostToolUseFailure:[group(question,30)],
+  SessionStart:[group('startup|resume',4)],Stop:[group(null)],PreToolUse:[group('Write',4),group(question,30)],PostToolUse:[group('mcp__sample_tools__(read_one|write_two)'),group(question,30)],PostToolUseFailure:[group(question,30)],
 } };
 const macAccepts = registrationPostcondition(mac,JSON.stringify(macSettings));
 assert.ok(macAccepts(JSON.stringify({ ...macSettings,enabledPlugins:{ ...macSettings.enabledPlugins,'subject@market':true } })));
@@ -41,6 +41,9 @@ for (const mod of [
   doc => { doc.hooks.Stop[0].externalFixtureField = 'opaque'; },
   doc => { doc.hooks.Stop[0].hooks[0].timeout = 60; },
   doc => { doc.hooks.PreToolUse[0].matcher = 'unknown'; },
+  doc => { doc.hooks.PreToolUse[0].matcher = 'mcp__sample_tools__(read_one|write_two)'; },
+  doc => { doc.hooks.PostToolUse[0].matcher = 'mcp__sample_tools__(read_.*|write_two)'; },
+  doc => { doc.hooks.PostToolUse[0].matcher = 'mcp__sample_tools__(one|two|three)'; },
   doc => { doc.enableAllProjectMcpServers = false; },
   doc => { doc.skillOverrides.fixture = 'on'; },
   doc => { delete doc.extraKnownMarketplaces; },

@@ -41,6 +41,8 @@ def lifecycle(run, binary, project, home, variant):
              for event in ['Stop','SessionStart','PreToolUse','PostToolUse','PostToolUseFailure']}
     for event in hooks.keys()-{'Stop'}:
         hooks[event][0]['matcher'] = 'startup|resume' if event=='SessionStart' else 'AskUserQuestion|AskQuestion|request_user_input'
+    hooks['PostToolUse'].insert(1,{'matcher':'mcp__sample_tools__(read_one|write_two)','hooks':copy.deepcopy(callbacks)})
+    hooks['PostToolUse'].append({'matcher':'mcp__box2__(lookup|list_v2)','hooks':copy.deepcopy(callbacks)})
     obj = {'hooks':hooks,'enableAllProjectMcpServers':True,'skillOverrides':{'fixture':'off'},
            'enabledPlugins':{subject:True},'extraKnownMarketplaces':{name:{'source':{'source':'directory','path':str(market)}}}}
     obj['enabledPlugins'][neighbor] = True
