@@ -4,5 +4,5 @@ export { createNavigation, ensureWorkspaceDirs, runRepositoryCommand, Navigation
 export { gitLabClient, GitLabError } from './git/gitlab.js';
 export { enterEntrypoint, entrypointArgv, parseRuntimeTarget, supportsNode } from './runtime.js';
 export { bundledAssets } from './resources.js';
-export { applyWorkspaceHooks, applyPreparedWorkspaceHooks, planWorkspaceHooks, prepareWorkspaceHooks, recoverWorkspaceHooks } from './hooks/workspace.js';
+export { applyWorkspaceHooks, applyPreparedWorkspaceHooks, inspectWorkspaceHookOperation, planWorkspaceHooks, prepareWorkspaceHooks, recoverWorkspaceHooks } from './hooks/workspace.js';
 export { workspaceHookOutcome } from './hooks/outcome.js';

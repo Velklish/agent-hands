@@ -36,6 +36,8 @@ npx --no-install agent-hands apply --config layout.json --state cursor-state.jso
 
 Keep the state file in a trusted directory outside the workspace. Use one file per workspace and target. Reuse it to update owned files; apply empty lists with the same state to retire them. An existing unmanaged file or an edited owned file causes a refusal. Preview prints paths rather than configuration contents. See the [layout API](docs/reference/layout.md) and [bundled assets](assets/README.md).
 
+For managed command callbacks, see [workspace hooks](docs/reference/hooks.md). A read-only preview, explicit enablement and batch application share the same package-root API.
+
 ## Find a repository
 
 With `{"root":"/absolute/workspace"}` in `repos.json`, run `npx --no-install agent-hands path --config repos.json example`. The matching checkout must exist in `repos/` or `external/`. `zone` inspects local checkouts. `clone` and `fresh` explicitly contact remotes. For URL routing add `"hosts":{"github.com":"external"}`; no host is enabled by default. For JavaScript use `createNavigation` from `agent-hands`. See [repository navigation](docs/reference/repository-navigation.md).
