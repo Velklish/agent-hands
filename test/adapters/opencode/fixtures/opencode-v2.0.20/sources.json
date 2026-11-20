@@ -1,0 +1,35 @@
+{
+  "tag": "v2.0.20",
+  "commit": "84c9be93a56304a108f1a22df0c5d62c26d5b6ca",
+  "assets": {
+    "LICENSE": {
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/84c9be93a56304a108f1a22df0c5d62c26d5b6ca/LICENSE",
+      "sourceSha256": "625f0f619133f89bbbb2abe37369613dfa1885eba1e50d02170deb62bb42cb6b",
+      "fixtureSha256": "625f0f619133f89bbbb2abe37369613dfa1885eba1e50d02170deb62bb42cb6b"
+    },
+    "defaults.txt": {
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/84c9be93a56304a108f1a22df0c5d62c26d5b6ca/packages/schema/src/agent.ts",
+      "sourceSha256": "eb227878ba3f002daad5f1012c7f555fa4d4b69c39e3c969225708ace780a1a5",
+      "fixtureSha256": "2e0056ce9733096f1e2d4631b1b46f269f5fe63e9d6c53053e262510c0cc000a",
+      "lines": [
+        46,
+        52
+      ],
+      "excerpt": "Permission array expression without the property name or trailing comma."
+    },
+    "permission.ts": {
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/84c9be93a56304a108f1a22df0c5d62c26d5b6ca/packages/core/src/permission.ts",
+      "sourceSha256": "d69278896f9a541dac7cf46056c859834d840ecc16ac57a639cbabc1afdda9a5",
+      "fixtureSha256": "dd2bb5bb80df95b44302d8cd4920368f60f45865e508009f9b89bf5cbdbf7520",
+      "lines": [
+        87,
+        101
+      ]
+    },
+    "wildcard.ts": {
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/84c9be93a56304a108f1a22df0c5d62c26d5b6ca/packages/core/src/util/wildcard.ts",
+      "sourceSha256": "8c38258732c7e569febf52a36468181e2c851f2dceea7112b618c0cf43ed3170",
+      "fixtureSha256": "8c38258732c7e569febf52a36468181e2c851f2dceea7112b618c0cf43ed3170"
+    }
+  }
+}
