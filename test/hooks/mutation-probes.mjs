@@ -35,7 +35,7 @@ try {
     [native,registration,'exit !== 0 || !project','!project','native failure','native failure cannot confirm'],
     [native,registration,"if (!registrationPostcondition(request, before.settings ?? '{}')(after.settings))",'if (false)','unverified settings','neighbor mutation cannot confirm'],
     [native,registration,"if (!record(entry) || entry.installLocation !== request.directory || !isDeepStrictEqual(entry.source, { source: 'directory', path: request.directory }))",'if (false)','missing marketplace','installation alone is not a marketplace'],
-    [native,registration,'const installed = load(after.installations);','if (!after.installations) return true; const installed = load(after.installations);','missing installation','marketplace alone is not an installation'],
+    [native,registration,'const rows = installed[subject];','if (after.installations === null) return true; const rows = installed[subject];','missing installation','marketplace alone is not an installation'],
     ['dist/hooks/hook-operation.js',operation,'    assertHookOperationIdle(scope);','    /* omitted */','re-entry into pending transaction','AssertionError'],
   ]) {
     const target = path.join(root,module), original = fs.readFileSync(target,'utf8');
