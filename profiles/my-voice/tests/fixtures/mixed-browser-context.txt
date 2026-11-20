@@ -1,0 +1,10 @@
+# File mentions:
+## File 1
+An automatically attached file description
+
+<in-app-browser-context source="ambient-ui-state">
+Automatically supplied browser state, not written by the user
+</in-app-browser-context>
+
+My request:
+A synthetic user request
