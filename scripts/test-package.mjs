@@ -128,7 +128,7 @@ nav.scan([4]);
 planLayout({...input,target:'unknown'});`);
   // Use an external compiler, resolving declarations only from the installed project.
   run(process.execPath,[path.join(source,'node_modules/typescript/bin/tsc'),'--ignoreConfig','--strict','--noEmit','--module','NodeNext','consumer.mts'],project);
-  console.log(`${label}: CLI, root JavaScript, strict TypeScript, ownership, interrupted batch recovery and installed examples passed`);
+  console.log(`${label}: CLI, root JavaScript, strict TypeScript, ownership, interrupted batch recovery, orphan reconciliation and installed examples passed`);
 }
 try {
   const [pack]=JSON.parse(run('npm',['pack','--ignore-scripts','--json','--pack-destination',packed]));

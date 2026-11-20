@@ -80,15 +80,16 @@ test('public inspection reports another project blocking the account before or a
   const root=realpathSync(scratch(t)), home=realpathSync(scratch(t)), other=realpathSync(scratch(t));
   const dir=path.join(home,'.agent-hands/account-hooks'), file=path.join(dir,'transaction/pending.json');
   const [foreignPointer,accountPointer]=[path.join(other,'.agent-hands/hooks/pending'),path.join(dir,'pending')];
-  const targets=[path.join(other,'.claude/settings.json'),path.join(other,'.agent-hands/hooks/claude/ownership.json')];
-  const reference=JSON.stringify({id:'abcdabcd-abcd-abcd-abcd-abcdabcdabcd',journal:file,pointers:[foreignPointer,accountPointer],targets});
+  const targets=['.claude/settings.json','.agent-hands/hooks/claude/ownership.json','.agent-hands/hooks/claude/preferences.json']
+    .map(file=>path.join(other,file));
+  const reference=JSON.stringify({id:'abcdabcd-abcd-abcd-abcd-abcdabcdabcd',journal:file,pointers:[foreignPointer,accountPointer],targets,participant:'fixture-private'});
   const journal=JSON.stringify({reference,participant:'fixture-private',journal:{version:1,phase:'pending',targets:targets.map(file=>({file,before:'fixture-opaque',after:null}))}});
   put(home,path.relative(home,file),journal);
   for (const published of [false,true]) {
     if (published) put(home,path.relative(home,accountPointer),reference);
     assert.deepEqual(inspectWorkspaceHookOperation({root,accountHome:home}),{pending:false,registration:false,blockedBy:'another-project'});
     assert.deepEqual(inspectWorkspaceHookOperation({root}),{pending:false,registration:false});
-    assert.deepEqual(inspectWorkspaceHookOperation({root:other,accountHome:home}),{pending:true,registration:true,targets:['claude']});
+    assert.deepEqual(inspectWorkspaceHookOperation({root:other,accountHome:home}),{pending:true,registration:false,targets:['claude'],accountScoped:true});
     const input={...request(root),registration:registration(root,home)};
     for (const check of [planWorkspaceHooks,applyWorkspaceHooks]) {
       assert.throws(()=>check(input),{message:'Account hook operation pending in another project'});
