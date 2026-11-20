@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {createHash} from 'node:crypto';
 import test from 'node:test';
-import { applyWorkspaceHooks, planWorkspaceHooks, workspaceHookOutcome } from 'agent-hands';
+import { applyWorkspaceHooks, inspectWorkspaceHookOwnership, planWorkspaceHooks, workspaceHookOutcome } from 'agent-hands';
 
 const documents = { claude:'.claude/settings.json',cursor:'.cursor/hooks.json',codex:'.codex/hooks.json' };
 const fixture = t => {
@@ -36,6 +36,7 @@ for (const [target,file] of Object.entries(documents)) test(`${target}: registra
   assert.deepEqual(dispatch(0),[]);
   applyWorkspaceHooks(input);
   assert.equal(applyWorkspaceHooks(input).changed,false);
+  assert.deepEqual(inspectWorkspaceHookOwnership(input),{owners:['fixture'],released:[]});
   assert.deepEqual(dispatch(0),[{owner:'fixture',event:hook.event,ok:true,exitStatus:0}]);
   assert.deepEqual(dispatch(7),[{owner:'fixture',event:hook.event,ok:false,exitStatus:7}]);
   applyWorkspaceHooks({...input,enabled:false});

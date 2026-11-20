@@ -77,6 +77,13 @@ function reconcileStructure(spec: ManagedHooks, previous: Structure, before: Rec
 export function confirmedHookIntents(spec: Pick<ManagedHooks,'target'|'document'|'state'>) {
   return receipt({ ...spec,intents:[] },snapshot(spec.state),snapshot(spec.document)).entries;
 }
+export function inspectHookOwnership(spec: Pick<ManagedHooks,'target'|'document'|'state'>) {
+  const before = snapshot(spec.state);
+  if (before === null) return null;
+  const evidence = receipt({ ...spec,intents:[] },before,snapshot(spec.document));
+  const checked = prepareHookDocument({ ...spec,intents:evidence.entries,expectedState:before });
+  return {owners:evidence.entries.map(entry => entry.owner),released:checked.released};
+}
 
 export function prepareHookDocument(spec: ManagedHooks): { changes: TargetChange[]; shifted: boolean; released: readonly string[] } {
   const document = snapshot(spec.document);

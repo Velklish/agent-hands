@@ -22,6 +22,8 @@ if (child === '--child') {
     rename(...args);
     if (++count === Number(boundary)) process.exit(73);
   };
+  const unlink = fs.unlinkSync;
+  fs.unlinkSync = (...args) => { unlink(...args); if (++count === Number(boundary)) process.exit(73); };
   syncBuiltinESMExports();
   commitHookOperation(scope,changes(scope));
 } else if (child === '--native-child') {
@@ -37,15 +39,17 @@ if (child === '--child') {
     assert.equal(fs.existsSync(scope.targets[1]),false);
     fs.unlinkSync(scope.targets[0]); recoverHookOperation(scope);
   } finally { fs.rmSync(nativeRoot,{recursive:true,force:true}); }
-  for (const boundary of [1,2,3,4,5]) {
+  for (const boundary of [1,2,3,4,5,6,7]) {
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'hook-operation-')));
     try {
       const scope = fixture(root);
       assert.equal(spawnSync(process.execPath,[fileURLToPath(import.meta.url),'--child',root,String(boundary)],{stdio:'inherit'}).status,73);
-      assert.throws(() => commitHookOperation(scope,changes(scope)),/Unfinished/);
-      assert.throws(() => recoverHookOperation({ ...scope,targets:[...scope.targets].reverse() }),/scope mismatch/);
-      recoverHookOperation(scope);
-      for (const file of scope.targets) assert.equal(fs.existsSync(file),boundary === 5);
+      if (boundary < 7) {
+        assert.throws(() => commitHookOperation(scope,changes(scope)),/Unfinished/);
+        assert.throws(() => recoverHookOperation({ ...scope,targets:[...scope.targets].reverse() }),/scope mismatch/);
+        recoverHookOperation(scope);
+      } else assert.equal(findHookOperation(scope.directory,scope.pointers),null);
+      for (const file of scope.targets) assert.equal(fs.existsSync(file),boundary >= 5);
       assert.equal(fs.existsSync(scope.pointers[0]),false);
       assert.equal(fs.existsSync(path.join(scope.directory,'pending.json')),false);
       console.log(`PASS restart after write ${boundary}`);

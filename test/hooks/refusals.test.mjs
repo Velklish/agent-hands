@@ -6,8 +6,8 @@ import { applyTargets, rollbackTargets, snapshot } from '../../dist/hooks/hook-j
 import { assertHookOperationIdle } from '../../dist/hooks/hook-operation.js';
 import { deliverHooks } from '../../dist/hooks/hook-delivery.js';
 
-function refused(action) {
-  try { action(); return false; } catch { return true; }
+function refused(action,expected) {
+  try { action(); return false; } catch (error) { return !expected || expected.test(error.message); }
 }
 
 const root = realpathSync(mkdtempSync(path.join(os.tmpdir(),'hook-negative-')));
@@ -47,6 +47,6 @@ try {
   doubled.hooks.Example.push(doubled.hooks.Example[0]);
   const edited = JSON.stringify(doubled);
   writeFileSync(document,edited);
-  const unique = refused(deliver);
+  const unique = refused(deliver,/ambiguous/);
   check('two exact callbacks refuse ownership without rewriting either file',unique && snapshot(document) === edited && snapshot(receipt) === previous);
 } finally { rmSync(root,{recursive:true,force:true}); }

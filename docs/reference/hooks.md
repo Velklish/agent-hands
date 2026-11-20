@@ -21,6 +21,8 @@ For several targets, pass `{root, selections: [{target, enabled, hooks}, ...]}` 
 
 ## Composing a transaction
 
+`inspectWorkspaceHookOwnership({root,target})` returns `null` without a receipt; otherwise it returns confirmed `owners` and `released` identifiers. It verifies the receipt against the current document. Missing or ambiguous callbacks raise a conflict instead of reporting stale ownership as active.
+
 `prepareWorkspaceHooks(input)` returns an opaque, single-use plan for `applyPreparedWorkspaceHooks(plan, participant)`. Use this when a separate writer must commit its own layout, links and manifest with the hook settings. The caller preflights its own resources before starting. The package checks its snapshots again under the writer lock before calling the participant.
 
 - `participant.id` identifies an implementation that can reopen its durable state after process restart.
