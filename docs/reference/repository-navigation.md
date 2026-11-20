@@ -2,7 +2,7 @@
 
 ## Find or inspect an existing checkout
 
-Create a navigator with `createNavigation({ root, cwd, routeHost })` from the built navigation module in `dist/git/navigation.js`. Pass an existing `root`, or let the navigator find the nearest `.agent-hands/` marker from `cwd`. A Git checkout alone is not a workspace marker. `ensureWorkspaceDirs(root)` creates `repos/`, `external/` and `sandbox/`; discovery does not create them.
+Create a navigator with `createNavigation({ root, cwd, routeHost })` from `agent-hands`. Pass an existing `root`, or let the navigator find the nearest `.agent-hands/` marker from `cwd`. A Git checkout alone is not a workspace marker. `ensureWorkspaceDirs(root)` creates `repos/`, `external/` and `sandbox/`; discovery does not create them.
 
 - `repos/` mirrors repository namespaces. `external/` receives flat destinations from URL routes, but lookup also finds existing nested checkouts. `sandbox/` is not searched: use a disk path to refresh a Git checkout there.
 - A short name searches existing clones first. Names match on tokens, and equal best matches return candidates instead of picking one. A caller-supplied `search` callback may resolve a local miss. Without it, a local miss says nothing about the existence of a remote repository.

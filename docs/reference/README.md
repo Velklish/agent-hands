@@ -25,7 +25,4 @@ the lockfile records its integrity. Updating it is an explicit project decision.
 
 ## Planning boundaries
 
-Future work covers owned application of workspace resources,
-runtime and hooks, English user-facing rules with configurable voice, and installable
-CLI/API packaging. These are planning areas, not implemented subsystems. Their task
-cards define acceptance checks without prescribing speculative command names or APIs.
+Native runtime selection and installation of workspace modules belong to the consumer. For explicit Node entry points the package root exports `parseRuntimeTarget`, `entrypointArgv`, `supportsNode` and `enterEntrypoint`. Supply fully qualified `node` and `entrypoint` paths. `enterEntrypoint` returns true to continue in the same Node process; otherwise it starts the selected executable and propagates its exit status.

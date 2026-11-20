@@ -13,3 +13,9 @@ planLayout({ ...input, target: 'crusor' });
 planLayout({ root: input.root, target: input.target, skills: [], servers: [], subagents: [] });
 // @ts-expect-error Display data is not an applicable plan.
 void applyLayout({ root: '/project', files: [] });
+
+for (const target of ['cursor', 'codex'] as const) {
+  const selected: LayoutInput = { ...input, target };
+  const result: Promise<LayoutResult> = applyLayout(planLayout(selected));
+  void result;
+}

@@ -20,7 +20,6 @@
     "node": ">=26"
   },
   "devDependencies": {
-    "@types/node": "26.6.6",
     "acorn": "8.15.0",
     "backslop": "https://codeload.github.com/Velklish/backslop/tar.gz/refs/tags/v1.0.0",
     "smol-toml": "1.9.0",
@@ -29,17 +28,28 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run test:layout",
+    "test": "npm run typecheck && npm run build && npm run test:layout:types && node --test \"test/**/*.test.mjs\" && npm run test:voice",
     "test:layout": "npm run build && npm run test:layout:types && node --test test/*.test.mjs test/adapters/*/*.test.mjs",
-    "test:layout:types": "tsc --ignoreConfig --noEmit --strict --module NodeNext test/contract.mts"
+    "test:layout:types": "tsc --ignoreConfig --noEmit --strict --module NodeNext test/contract.mts",
+    "test:voice": "python3 -B -m unittest discover -s profiles/my-voice/tests",
+    "test:all": "npm test && node test/git/mutation-probes.mjs && npm run test:package",
+    "test:package": "node scripts/test-package.mjs"
   },
   "dependencies": {
-    "yaml": "2.9.1"
+    "yaml": "2.9.1",
+    "@types/node": "26.6.6"
   },
   "files": [
+    "bin",
     "dist",
     "assets",
-    "docs/reference/layout.md"
+    "profiles/my-voice/README.md",
+    "profiles/my-voice/skills/**/*.md",
+    "profiles/my-voice/skills/**/*.py",
+    "docs/reference/*.md"
   ],
-  "version": "0.0.0"
+  "version": "0.1.0",
+  "bin": {
+    "agent-hands": "bin/agent-hands.js"
+  }
 }

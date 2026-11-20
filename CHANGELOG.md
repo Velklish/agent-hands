@@ -11,3 +11,4 @@
 - Accept valid relative checkout paths from nested working directories even when the same argument is not a valid namespace.
 - Plan and apply selected workspace resources with per-target ownership and independent harness adapters.
 - Include portable English rules, a workspace template and an optional question-writing skill.
+- Package the CLI, root JavaScript API, declarations, runtime entrypoint helpers and public assets for installation from an exact Git tag.

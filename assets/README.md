@@ -15,15 +15,15 @@ These English files provide workspace instructions. They do not select a develop
 
 ## Apply the bundled rules and skill
 
-With the package installed and its assets available in the current directory, run this JavaScript with an existing workspace directory as the first argument. Save the returned state separately for this target and delivery; pass it to the next `applyLayout` call.
+With the package installed, run this JavaScript with an existing workspace directory as the first argument. Save the returned state separately for this target and delivery; pass it to the next `applyLayout` call.
 
 ```js
 import path from 'node:path';
-import { planLayout, applyLayout } from 'agent-hands';
+import { planLayout, applyLayout, bundledAssets } from 'agent-hands';
 const root = path.resolve(process.argv[2]);
 const plan = planLayout({ root, target: 'cursor',
-  rules: ['AGENTS.md', 'workspace.md'].map(name => path.resolve('assets/rules', name)),
-  skills: [{ name: 'asking-questions', dirAbs: path.resolve('assets/skills/asking-questions') }],
+  rules: bundledAssets.workspaceRules,
+  skills: [{ name: 'asking-questions', dirAbs: bundledAssets.askingQuestions }],
   servers: [], subagents: [] });
 const result = await applyLayout(plan);
 console.log(JSON.stringify(result.state));
