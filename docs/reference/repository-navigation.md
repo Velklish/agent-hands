@@ -6,7 +6,7 @@ Create a navigator with `createNavigation({ root, cwd, routeHost })` from the bu
 
 - `repos/` mirrors repository namespaces. `external/` receives flat destinations from URL routes, but lookup also finds existing nested checkouts. `sandbox/` is not searched: use a disk path to refresh a Git checkout there.
 - A short name searches existing clones first. Names match on tokens, and equal best matches return candidates instead of picking one. A caller-supplied `search` callback may resolve a local miss. Without it, a local miss says nothing about the existence of a remote repository.
-- A qualified name prefers an existing namespace checkout over an incidental directory of the same name. Prefix a relative path with `./` or use an absolute path to select disk interpretation. The first namespace segment `external` is reserved, so a checkout under `repos/external/` cannot hide a checkout in `external/`.
+- A qualified name prefers an existing namespace checkout. If the namespace does not identify an existing checkout, a valid existing disk path within a repository zone may still match. Prefix a relative path with `./` or use an absolute path to select disk interpretation directly. The first namespace segment `external` is reserved, so a checkout under `repos/external/` cannot hide a checkout in `external/`.
 - `resolve(target)` describes the destination; `repoPath(target)` requires an existing Git checkout root. Both are read-only by default. `scan()` reads only locally available refs, status and contact timestamps. It does not fetch, update the index or change checkouts. An unreadable status or missing comparison ref is distinct from a clean checkout or a zero commit count.
 
 ## Clone or update explicitly

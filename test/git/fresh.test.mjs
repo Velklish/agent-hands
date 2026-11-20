@@ -155,7 +155,16 @@ test('fresh resolves names before mutation and does not update the workspace fro
   assert.equal(tip(outside), next);
 });
 
-test('zone aliases cannot refresh the enclosing workspace, even when the first top-level query fails', posix, async (t) => {
+test('zone aliases cannot refresh the enclosing workspace', posix, async (t) => {
+  const root = fixture(t);
+  seed(root);
+  ensureWorkspaceDirs(root);
+  symlinkSync(root, path.join(root, 'repos/enclosing'), 'dir');
+  const nav = createNavigation({ root, cwd: root, routeHost });
+  await assert.rejects(nav.fresh('./repos/enclosing'), /Not inside a Git clone/);
+});
+
+test('fresh stops after the first failed top-level query for both sandbox path spellings', async (t) => {
   const base = fixture(t);
   const source = seed(path.join(base, 'source'));
   const root = checkout(source, path.join(base, 'workspace'));
@@ -163,9 +172,7 @@ test('zone aliases cannot refresh the enclosing workspace, even when the first t
   commit(source, 'second');
   ensureWorkspaceDirs(root);
   mkdirSync(path.join(root, 'sandbox/scratch'));
-  symlinkSync(root, path.join(root, 'repos/enclosing'), 'dir');
   const nav = createNavigation({ root, cwd: root, routeHost });
-  await assert.rejects(nav.fresh('./repos/enclosing'), /Not inside a Git clone/);
   const witness = path.join(base, 'top-level-attempt');
   const stub = stubGit(t, base, `
     if (args.includes('--show-toplevel')) {
@@ -186,7 +193,7 @@ test('zone aliases cannot refresh the enclosing workspace, even when the first t
   assert.equal(tip(root, 'origin/main'), original);
 });
 
-test('failed status or ref reads do not trigger a merge; missing-local reports the fetch result', posix, (t) => {
+test('failed status or ref reads do not trigger a merge; missing-local reports the fetch result', (t) => {
   const root = fixture(t);
   const dir = seed(path.join(root, 'work'));
   const stub = stubGit(t, root, `
@@ -227,7 +234,7 @@ test('failed status or ref reads do not trigger a merge; missing-local reports t
   assert.equal(stub.calls().filter(({ cmd }) => cmd === 'merge').length, 1);
 });
 
-test('fresh fetch alone gets explicit authentication and redacts failed diagnostics', posix, (t) => {
+test('fresh fetch alone gets explicit authentication and redacts failed diagnostics', (t) => {
   const root = fixture(t);
   const origin = seed(path.join(root, 'source'));
   const dir = checkout(origin, path.join(root, 'work'));

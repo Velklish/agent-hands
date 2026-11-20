@@ -102,9 +102,12 @@ export function createNavigation({ root: explicitRoot, cwd = process.cwd(), rout
     if (isDiskPath(target)) return diskResult();
     if (target.includes('/') || (path.sep === '\\' && target.includes('\\'))) {
       const nsPath = normalizeNs(root, target);
-      if (!nsPath || disk.reserved) throw new NavigationError(`Unsafe or reserved repository namespace: ${target}`);
-      if (isCloneDir(repoAbsPath(root, nsPath))) return fromNs(nsPath, 'namespace');
+      const firstSegment = target.split(path.sep === '\\' ? /[\\/]/ : '/')[0];
+      const crossesExternal = firstSegment === EXTERNAL_ZONE && disk.nsPath !== null && zoneOfNs(disk.nsPath) !== EXTERNAL_ZONE;
+      if (disk.reserved || crossesExternal) throw new NavigationError(`Unsafe or reserved repository namespace: ${target}`);
+      if (nsPath && isCloneDir(repoAbsPath(root, nsPath))) return fromNs(nsPath, 'namespace');
       if (disk.exists && disk.nsPath) return diskResult();
+      if (!nsPath) throw new NavigationError(`Unsafe or reserved repository namespace: ${target}`);
       const candidate = fromNs(nsPath, 'namespace');
       return disk.exists ? { ...candidate, note: `Ignored directory outside the repository zones: ${disk.abs}` } : candidate;
     }

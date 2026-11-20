@@ -111,7 +111,25 @@ test('zone scan reports actual state, contact, missing refs and explicit counter
   assert.equal(existsSync(path.join(unknownDefault, '.git/FETCH_HEAD')), false);
 });
 
-test('zone scan can distinguish missing comparison refs, count failures and failed diagnosis', posix, async (t) => {
+test('zone scan leaves stale index stat data untouched even when ordinary status rewrites it', async (t) => {
+  const root = fixture(t);
+  const dir = seed(path.join(root, 'repos/team/project'));
+  const tracked = path.join(dir, 'first');
+  const index = path.join(dir, '.git/index');
+  const contents = readFileSync(tracked);
+  const time = new Date(statSync(tracked).mtimeMs - 60_000);
+  utimesSync(tracked, time, time);
+  const before = readFileSync(index);
+  const mtime = statSync(index).mtimeMs;
+  assert.equal((await scanZone(root))[0].dirty, false);
+  assert.deepEqual(readFileSync(tracked), contents);
+  assert.equal(statSync(index).mtimeMs, mtime);
+  assert.deepEqual(readFileSync(index), before);
+  assert.equal(git(dir, 'status', '--porcelain'), '');
+  assert.notDeepEqual(readFileSync(index), before, 'the same fixture makes ordinary Git status refresh the index');
+});
+
+test('zone scan can distinguish missing comparison refs, count failures and failed diagnosis', async (t) => {
   const root = fixture(t);
   const source = seed(path.join(root, 'source'));
   git(source, 'branch', 'topic');
@@ -124,8 +142,8 @@ test('zone scan can distinguish missing comparison refs, count failures and fail
   const stub = stubGit(t, root, `
     if (cmd === 'rev-list') { console.error('simulated count failure'); process.exit(128); }
     if (cmd === 'rev-parse' && args.at(-1).endsWith('^{commit}')) {
-      if (cwd.endsWith('/diagnosis')) { console.error('simulated ref inspection failure'); process.exit(128); }
-      if (cwd.endsWith('/silent')) process.exit(128);
+      if (cwdEndsWith('diagnosis')) { console.error('simulated ref inspection failure'); process.exit(128); }
+      if (cwdEndsWith('silent')) process.exit(128);
     }
   `);
   const rows = await scanZone(root);
@@ -136,7 +154,7 @@ test('zone scan can distinguish missing comparison refs, count failures and fail
   assert.equal(rows[2].aheadWhy, 'Ref not present locally: origin/local');
   assert.match(rows[3].aheadWhy, /simulated count failure.*could not inspect.*origin\/local/);
   assert.doesNotMatch(rows[3].aheadWhy, /Ref not present locally/);
-  for (const name of names) assert.equal(stub.calls().filter(({ cmd, args, cwd }) => cwd.endsWith(`/${name}`) && cmd === 'symbolic-ref'
+  for (const name of names) assert.equal(stub.calls().filter(({ cmd, args, cwd }) => path.basename(cwd) === name && cmd === 'symbolic-ref'
     && args.includes('refs/remotes/origin/HEAD')).length, 1);
   assert.ok(rows.every(({ default: branch }) => branch === 'main'));
 });

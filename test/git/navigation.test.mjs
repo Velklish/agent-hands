@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, symlinkSync, write
 import path from 'node:path';
 import { test } from 'node:test';
 import { isDiskPath, isUrl, parseUrl, routeUrl, urlAuthority, urlHost, httpsRepoUrl } from '../../dist/git/address.js';
-import { createNavigation, discoverRoot, ensureWorkspaceDirs, probeDisk, runRepositoryCommand } from '../../dist/git/navigation.js';
+import { checkOrigin, createNavigation, discoverRoot, ensureWorkspaceDirs, probeDisk, runRepositoryCommand } from '../../dist/git/navigation.js';
 import { checkout, command, commit, config, fixture, git, posix, routeHost, seed } from './fixture.mjs';
 
 const a = 'https://git.one.test/team/sub/project.git';
@@ -107,6 +107,7 @@ test('unreadable, missing, competing and multiple origin values do not prove ide
   const dir = seed(path.join(root, 'external/project'));
   const nav = createNavigation(options(root));
   await assert.rejects(nav.repoPath(one), { reason: 'mismatch' });
+  assert.doesNotThrow(() => checkOrigin(dir, one, routeHost, { allowMissing: true }));
   git(dir, 'remote', 'add', 'origin', one);
   await assert.rejects(nav.clone(two), { reason: 'mismatch' });
   git(dir, 'config', '--add', 'remote.origin.url', two);
@@ -115,6 +116,7 @@ test('unreadable, missing, competing and multiple origin values do not prove ide
   await assert.rejects(nav.clone(one), { reason: 'ambiguous' });
   appendFileSync(path.join(dir, '.git/config'), '\n[broken\n');
   await assert.rejects(nav.repoPath(one), { reason: 'unreadable' });
+  assert.throws(() => checkOrigin(dir, one, routeHost, { allowMissing: true }), { reason: 'unreadable' });
 });
 
 test('namespace resolution wins over a sibling directory and does not hide rejected disk readings', async (t) => {
@@ -159,6 +161,22 @@ test('namespace resolution wins over a sibling directory and does not hide rejec
   }
   for (const input of ['.', '..', './x', '../x', actual]) assert.equal(isDiskPath(input), true);
   for (const input of ['project', 'team/project', 'repos/team/project']) assert.equal(isDiskPath(input), false);
+});
+
+test('a valid disk path from a nested cwd survives an invalid namespace reading', async (t) => {
+  const root = fixture(t);
+  const first = seed(path.join(root, 'repos/team/first'));
+  const second = seed(path.join(root, 'repos/team/second'));
+  mkdirSync(path.join(first, 'nested'));
+  const settings = options(root, first);
+  const target = 'nested/../../second';
+  const run = command(runRepositoryCommand, settings);
+  assert.deepEqual(await run('path', target), { exit: 0, out: [second], err: [] });
+  const nav = createNavigation(settings);
+  const resolved = await nav.resolve(target);
+  assert.equal(resolved.source, 'disk');
+  assert.equal(resolved.abs, second);
+  assert.equal((await nav.repoPath(target)).abs, second);
 });
 
 test('lookup is read-only by default; an explicit update changes tracking refs', async (t) => {

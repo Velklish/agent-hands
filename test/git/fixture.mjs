@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import childProcess, { spawnSync } from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
 import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -60,6 +61,7 @@ export function stubGit(t, base, body) {
   const dir = path.join(base, 'stub');
   const log = path.join(base, 'git.jsonl');
   mkdirSync(dir);
+  const launcher = process.platform === 'win32' || process.env.GIT_FIXTURE_NODE_LAUNCHER === '1';
   const script = path.join(dir, 'git.mjs');
   writeFileSync(script, `
     import { appendFileSync } from 'node:fs';
@@ -74,6 +76,7 @@ export function stubGit(t, base, body) {
     }
     const cmd = args[0];
     appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv, args, cmd, cwd }) + '\\n');
+    const cwdEndsWith = (name) => cwd.replaceAll('\\\\', '/').endsWith('/' + name);
     const real = () => {
       const result = spawnSync('git', argv, { env: { ...process.env, PATH: ${JSON.stringify(process.env.PATH)} }, stdio: 'inherit' });
       process.exit(result.status ?? 128);
@@ -81,12 +84,27 @@ export function stubGit(t, base, body) {
     ${body}
     real();
   `);
-  if (process.platform === 'win32') throw new Error('Git subprocess stubs require a POSIX PATH launcher');
-  const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
-  writeFileSync(path.join(dir, 'git'), `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(script)} "$@"\n`, { mode: 0o755 });
-  const previous = process.env.PATH;
-  process.env.PATH = `${dir}${path.delimiter}${previous}`;
-  t.after(() => { process.env.PATH = previous; });
+  if (launcher) {
+    // Windows cannot launch a .cmd shim via execFile without a shell. Redirect only
+    // the executable at the test boundary so argv, options and real child exits survive.
+    const { spawnSync: sync, execFile: async } = childProcess;
+    const redirect = (run) => (exe, args, ...rest) => exe === 'git'
+      ? run(process.execPath, [script, ...args], ...rest) : run(exe, args, ...rest);
+    childProcess.spawnSync = redirect(sync);
+    childProcess.execFile = redirect(async);
+    syncBuiltinESMExports();
+    t.after(() => {
+      childProcess.spawnSync = sync;
+      childProcess.execFile = async;
+      syncBuiltinESMExports();
+    });
+  } else {
+    const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+    writeFileSync(path.join(dir, 'git'), `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(script)} "$@"\n`, { mode: 0o755 });
+    const previous = process.env.PATH;
+    process.env.PATH = `${dir}${path.delimiter}${previous}`;
+    t.after(() => { process.env.PATH = previous; });
+  }
   return {
     calls: () => {
       try { return readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse); }

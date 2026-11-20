@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
-import { cloneOf, isCloneDir, listClonedRepos, normalizeNs, nsUnderZone, repoAbsPath, SKIP_DIRS, ZONES, zoneOfNs, zoneRoots } from '../../dist/git/layout.js';
+import { cloneOf, isCloneDir, listClonedRepos, normalizeNs, nsUnderZone, repoAbsPath, ZONES, zoneOfNs, zoneRoots } from '../../dist/git/layout.js';
 import { findRepo, gitRemote, normalize, pickProjects, remoteSlug, score, tokens, topScored } from '../../dist/git/fuzzy.js';
 import { createNavigation } from '../../dist/git/navigation.js';
 import { gitToplevel, repoHead } from '../../dist/git/process.js';
@@ -36,7 +36,9 @@ test('discovery finds deep and flat clones but stops at hidden, excluded and nes
   for (const name of real) seed(path.join(root, name));
   const worktree = path.join(root, 'repos/team/worktree');
   git(path.join(root, 'repos/tool'), 'worktree', 'add', '-qb', 'linked', worktree);
-  for (const name of ['.hidden', ...SKIP_DIRS]) mkdirSync(path.join(root, 'repos/team', name, 'shadow/.git'), { recursive: true });
+  for (const name of ['.hidden', 'node_modules', 'bin', 'obj', 'packages', 'dist', 'build', 'target', 'vendor']) {
+    mkdirSync(path.join(root, 'repos/team', name, 'shadow/.git'), { recursive: true });
+  }
   mkdirSync(path.join(root, 'repos/tool/inside/hidden-clone/.git'), { recursive: true });
   mkdirSync(path.join(root, 'repos/group/subgroup'), { recursive: true });
   const found = listClonedRepos(root);
