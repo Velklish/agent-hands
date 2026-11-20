@@ -2,6 +2,8 @@
 
 Local session messages are candidates for interpreting assistant communication preferences. A user role or provider identity does not prove human authorship. No collector infers a language or a writing genre.
 
+Select readers with `collect.py --local SOURCE`. The command loads only selected readers. Each can run with the shared helpers and no other reader modules. When you select several, the report order and BB/Codex reconciliation do not depend on which reader finishes first.
+
 | Selection | Read surface | Coverage |
 |---|---|---|
 | `claude` | `$CLAUDE_CONFIG_DIR` or `~/.claude`, `projects/*/*.jsonl` | Top-level human candidate text; excludes side chains, tool results and system-origin records. |

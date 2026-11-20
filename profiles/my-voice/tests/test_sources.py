@@ -3,7 +3,9 @@ from contextlib import closing
 import json
 import os
 from pathlib import Path
+from shutil import copyfile
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -42,6 +44,39 @@ def field(number, value):
     return vint(number << 3 | 2) + vint(len(value)) + value
 
 
+ISOLATED_COLLECT = '''
+import json
+from pathlib import Path
+import runpy
+import subprocess
+import sys
+from unittest.mock import patch
+
+script, source = sys.argv[1:3]
+sys.path.insert(0, str(Path(script).parent))
+sys.argv = [script, '--local', source, *sys.argv[3:]]
+
+def bb_response(args, **kwargs):
+    assert source == 'bb' and args[:2] == ['bb', 'thread'], args
+    if args[2] == 'list':
+        rows = [] if '--archived' in args else [{'id': 'thread'}]
+    elif args[2] == 'messages':
+        rows = [] if '--after-seq' in args else [
+            {'id': 'fixture', 'seq': 1, 'type': 'client/turn/requested',
+             'data': {'requestId': 'fixture', 'source': 'tell', 'initiator': 'user', 'input': 'Fictional message'}},
+            {'seq': 2, 'type': 'turn/input/accepted', 'data': {'clientRequestId': 'fixture'}},
+        ]
+    else:
+        raise AssertionError(args)
+    return subprocess.CompletedProcess(args, 0, stdout=json.dumps(rows))
+
+with patch('shutil.which', side_effect=lambda name: 'fixture-bb' if name == source == 'bb' else None), \\
+        patch('subprocess.run', side_effect=bb_response), \\
+        patch('subprocess.Popen', side_effect=AssertionError('Unexpected external execution')):
+    runpy.run_path(script, run_name='__main__')
+'''
+
+
 class SourceTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='my-voice-sources-')
@@ -58,6 +93,63 @@ class SourceTests(unittest.TestCase):
 
     def collect_fixture_cursor(self):
         return collect_cursor(home=self.home, ide_roots=[self.cursor_ide_root])
+
+    def write_isolated_history_fixture(self, source, home):
+        text = 'Fictional message'
+        if source == 'claude':
+            write_jsonl(home / 'claude/projects/project/session.jsonl', [
+                {'type': 'user', 'uuid': 'fixture', 'message': {'role': 'user', 'content': text}},
+            ])
+        elif source == 'codex':
+            write_jsonl(home / 'codex/sessions/session.jsonl', [
+                {'type': 'session_meta', 'payload': {'id': 'thread', 'source': 'cli'}},
+                {'type': 'event_msg', 'payload': {'id': 'fixture', 'type': 'user_message', 'message': text}},
+            ])
+        elif source == 'cursor':
+            self.cursor_ide_database({'thread': {'conversation': [{'type': 1, 'bubbleId': 'fixture', 'text': text}]}},
+                                     {}, root=home / 'xdg-config/Cursor/User/globalStorage')
+        elif source == 'opencode':
+            database = home / 'xdg-data/opencode/opencode.db'
+            database.parent.mkdir(parents=True)
+            with closing(sqlite3.connect(database)) as connection:
+                connection.executescript('CREATE TABLE session_v2(id TEXT,parent_id TEXT,version TEXT,metadata TEXT);'
+                                         'CREATE TABLE session_message(id TEXT,session_id TEXT,type TEXT,seq INTEGER,'
+                                         'time_created INTEGER,data TEXT);'
+                                         "INSERT INTO session_v2 VALUES ('thread', NULL, 'fixture', NULL);")
+                connection.execute("INSERT INTO session_message VALUES ('fixture', 'thread', 'user', 1, NULL, ?)",
+                                   (json.dumps({'text': text}),))
+                connection.commit()
+
+    def test_each_local_reader_runs_through_collect_without_sibling_modules(self):
+        for source in ('claude', 'codex', 'bb', 'cursor', 'opencode'):
+            with self.subTest(source=source):
+                sandbox = self.home / source
+                home = sandbox / 'home'
+                package = sandbox / 'voice_sources'
+                package.mkdir(parents=True)
+                modules = {'__init__.py', 'common.py', f'{source}.py'}
+                for name in modules:
+                    copyfile(SCRIPTS / 'voice_sources' / name, package / name)
+                self.assertEqual(modules, {path.name for path in package.iterdir()})
+                script = sandbox / 'collect.py'
+                copyfile(SCRIPTS / 'collect.py', script)
+                self.write_isolated_history_fixture(source, home)
+                env = {key: os.environ[key] for key in ('SYSTEMROOT', 'WINDIR') if key in os.environ}
+                env.update(HOME=str(home), USERPROFILE=str(home), PATH=str(home / 'no-executables'), PYTHONUTF8='1',
+                           CLAUDE_CONFIG_DIR=str(home / 'claude'), CODEX_HOME=str(home / 'codex'),
+                           XDG_CONFIG_HOME=str(home / 'xdg-config'), XDG_DATA_HOME=str(home / 'xdg-data'))
+                corpus = sandbox / 'corpus.json'
+                result = subprocess.run([sys.executable, '-B', '-c', ISOLATED_COLLECT, str(script), source,
+                                         '--all-available', '--language', 'en', '--output', str(corpus)],
+                                        cwd=sandbox, env=env, capture_output=True, encoding='utf-8', timeout=15)
+                status, code = ('partial', 3) if source == 'codex' else ('ready', 0)
+                self.assertEqual(code, result.returncode, result.stderr)
+                self.assertEqual([{'source': source, 'status': status, 'messages': 1}],
+                                 json.loads(result.stdout)['sources'])
+                report, = json.loads(corpus.read_text(encoding='utf-8'))['sources']
+                message, = report['messages']
+                self.assertEqual((source, 'fixture', 'Fictional message'),
+                                 (message['source'], message['id'], message['text']))
 
     def test_timestamp_and_period_are_utc_and_half_open(self):
         report = Report('test', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z')

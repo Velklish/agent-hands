@@ -1,14 +1,9 @@
 from collections import defaultdict, deque
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
-from functools import partial
+from importlib import import_module
 import threading
 
-from .bb import collect_bb
-from .claude import collect_claude
-from .codex import collect_codex
 from .common import Report
-from .cursor import collect_cursor
-from .opencode import collect_opencode
 
 LOCAL_SOURCES = ('claude', 'codex', 'bb', 'cursor', 'opencode')
 
@@ -16,14 +11,10 @@ LOCAL_SOURCES = ('claude', 'codex', 'bb', 'cursor', 'opencode')
 def collect_sources(selected, since=None, until=None, home=None, workers=3, progress=None, excluded_codex_originators=()):
     if workers not in range(1, 6):
         raise ValueError("workers must be between 1 and 5")
-    readers = {"claude": collect_claude, "codex": collect_codex, "bb": collect_bb,
-               "cursor": collect_cursor, "opencode": collect_opencode}
-    if excluded_codex_originators:
-        readers['codex'] = partial(collect_codex, excluded_originators=excluded_codex_originators)
-    if set(selected) - readers.keys():
+    selected = set(selected)
+    if selected.difference(LOCAL_SOURCES):
         raise ValueError("Unknown local source")
-    sources = [(name, readers[name], (since, until) if name == 'bb' else (since, until, home))
-               for name in LOCAL_SOURCES if name in selected]
+    sources = [name for name in LOCAL_SOURCES if name in selected]
     progress_lock = threading.Lock()
 
     def emit(message):
@@ -31,10 +22,16 @@ def collect_sources(selected, since=None, until=None, home=None, workers=3, prog
             with progress_lock:
                 progress(message)
 
-    def run(name, reader, arguments):
+    def run(name):
         emit(f"{name} started")
         try:
-            return reader(*arguments)
+            module = import_module(f'.{name}', __name__)
+            reader = getattr(module, f'collect_{name}')
+            if name == 'bb':
+                return reader(since, until)
+            if name == 'codex' and excluded_codex_originators:
+                return reader(since, until, home, excluded_originators=excluded_codex_originators)
+            return reader(since, until, home)
         except Exception:
             # Error messages can include local paths, SQL values, or private prose.
             report = Report(name)
@@ -42,7 +39,7 @@ def collect_sources(selected, since=None, until=None, home=None, workers=3, prog
             return report.result()
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(run, *source): source[0] for source in sources}
+        futures = {executor.submit(run, name): name for name in sources}
         pending = set(futures)
         while pending:
             done, pending = wait(pending, timeout=10, return_when=FIRST_COMPLETED)
