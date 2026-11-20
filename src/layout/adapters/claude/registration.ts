@@ -41,10 +41,10 @@ function readSettings(text: string, platform: string): Fields {
   try { doc = JSON.parse(text); } catch { throw new Error('Unsupported project settings'); }
   // Reject duplicate members and lossy numeric conversions before trusting parsed values.
   const tokens = text.match(/"(?:\\.|[^"\\])*"|[^\s]/gs)?.join('');
-  const mac = platform === 'darwin';
-  if (JSON.stringify(doc) !== tokens || !record(doc) || !keys(doc,mac ? macKeys : linuxKeys)
-    || (mac && (!macKeys.every(k => Object.hasOwn(doc,k)) || doc.enableAllProjectMcpServers !== true || !dictionary(doc.skillOverrides,(k,v) => name(k) && v === 'off')))
-    || ('hooks' in doc && !dictionary(doc.hooks,(k,v) => (mac ? Object.hasOwn(macMatchers,k) : k === 'PreToolUse') && Array.isArray(v) && v.every(row => group(row,k,mac))))
+  const projected = platform === 'darwin' || (record(doc) && Object.hasOwn(doc,'enableAllProjectMcpServers'));
+  if (JSON.stringify(doc) !== tokens || !record(doc) || !keys(doc,projected ? macKeys : linuxKeys)
+    || (projected && (!macKeys.every(k => Object.hasOwn(doc,k)) || doc.enableAllProjectMcpServers !== true || !dictionary(doc.skillOverrides,(k,v) => name(k) && v === 'off')))
+    || ('hooks' in doc && !dictionary(doc.hooks,(k,v) => (projected ? Object.hasOwn(macMatchers,k) : k === 'PreToolUse') && Array.isArray(v) && v.every(row => group(row,k,projected))))
     || ('env' in doc && !dictionary(doc.env,(k,v) => /^[A-Z_][A-Z0-9_]*$/.test(k) && typeof v === 'string'))
     || ('enabledPlugins' in doc && !dictionary(doc.enabledPlugins,(k,v) => id(k) && typeof v === 'boolean'))
     || ('extraKnownMarketplaces' in doc && !dictionary(doc.extraKnownMarketplaces,(k,v) => name(k) && source(v)))) throw new Error('Unsupported project settings');

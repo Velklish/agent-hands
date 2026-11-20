@@ -114,6 +114,11 @@ export function prepareHookDocument(spec: ManagedHooks): { changes: TargetChange
       const located = planHooks({ target:spec.target,documentJson:document,historyJson:JSON.stringify({ kind:'confirmed',entries:[entry] }),intentsJson:'[]' });
       if (!located.ok && located.reason !== 'missing') throw new Error(`Hook restoration refused: ${located.reason}`);
       if (!located.ok) disconnected.add(owner);
+    } else if (released.has(owner)) {
+      const desired = spec.intents.find(e => e.owner === owner)!;
+      const located = planHooks({target:spec.target,documentJson:document,historyJson:JSON.stringify({kind:'confirmed',entries:[desired]}),intentsJson:'[]'});
+      if (!located.ok && located.reason !== 'missing') throw new Error(`Hook restoration refused: ${located.reason}`);
+      if (located.ok) previous.entries.push(desired);
     }
     released.delete(owner);
   }

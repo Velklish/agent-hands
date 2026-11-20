@@ -43,6 +43,20 @@ for (const [target,file] of Object.entries(documents)) test(`${target}: registra
   assert.deepEqual(dispatch(0),[]);
   assert.equal(readFileSync(path.join(root,'calls'),'utf8'),'xx');
 });
+for (const [target,file] of Object.entries(documents)) test(`${target}: explicit restore selects one unchanged released callback`,t => {
+  const root = fixture(t), input = {...select(target),root}, selected = ['fixture'];
+  applyWorkspaceHooks(input); applyWorkspaceHooks({...input,release:selected});
+  const output = path.join(root,file), original = readFileSync(output,'utf8');
+  applyWorkspaceHooks({...input,restore:selected});
+  assert.equal(readFileSync(output,'utf8'),original);
+  assert.deepEqual(inspectWorkspaceHookOwnership(input),{owners:selected,released:[]});
+  applyWorkspaceHooks({...input,release:selected});
+  const doc = JSON.parse(original), event = doc.hooks[input.hooks[0].event];event.push(structuredClone(event[0]));
+  const doubled = JSON.stringify(doc);writeFileSync(output,doubled);
+  assert.throws(() => applyWorkspaceHooks({...input,restore:selected}),/ambiguous/);
+  assert.equal(readFileSync(output,'utf8'),doubled);
+  assert.deepEqual(inspectWorkspaceHookOwnership(input),{owners:[],released:selected});
+});
 test('all targets preflight before delivery and individual updates preserve siblings',t => {
   const root = fixture(t);
   const selections = Object.keys(documents).map(select);
