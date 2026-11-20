@@ -42,4 +42,6 @@ If the workspace directory is a link to an independently verified bundle, supply
 
 On Darwin, first registration also accepts an absent settings file, `{}`, or a document containing only well-formed local marketplace and plugin enablement dictionaries. Other partial settings documents do not qualify under this rule.
 
+On Linux, the complete five-field projection is supported for a verified project **update** only. First registration uses the minimal Linux settings form. Mixing `env` into the full projection is not supported.
+
 Run `npm run test:hooks` for TypeScript declaration checks, independent adapter runs, fixture execution, restart tests and mutation probes. The offline fixture starts a real local process; its event dispatcher stands in for the harness. The opt-in Darwin probe runs the pinned native CLI with synthetic profiles and network and keychain access denied: `python3 test/adapters/claude/probes/registration-darwin.py /absolute/path/to/claude`. It checks project registration, not interactive event dispatch.
