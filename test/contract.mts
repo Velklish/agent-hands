@@ -1,4 +1,4 @@
-import { applyLayout, parseLayout, planLayout, readLayoutState, type LayoutInput, type LayoutPlan, type LayoutResult } from 'agent-hands';
+import { applyLayout, parseLayout, planLayout, readLayoutState, type LayoutChangeSet, type LayoutInput, type LayoutPlan, type LayoutResult } from 'agent-hands';
 import { planWorkspaceHooks, applyWorkspaceHooks, recoverWorkspaceHooks, type WorkspaceHookInput, type WorkspaceHookResult } from 'agent-hands';
 const hookInput: WorkspaceHookInput = { root:'/example',target:'claude',enabled:true,hooks:[{ owner:'example',event:'SessionStart',command:'example',timeout:4 }] };
 const hookResult: WorkspaceHookResult = planWorkspaceHooks(hookInput);
@@ -27,3 +27,14 @@ for (const target of ['cursor', 'codex'] as const) {
   const result: Promise<LayoutResult> = applyLayout(planLayout(selected));
   void result;
 }
+
+const staged = (changes: LayoutChangeSet) => {
+  changes.assertCurrent();
+  const ownership = readLayoutState(JSON.parse(JSON.stringify(changes.state)));
+  for (const write of changes.writes) void (write.secure && write.path);
+  void ownership;
+};
+void applyLayout(planLayout({...input,scope:'mcp',mcp:{compatibility:'report',unowned:'adopt-identical'},
+  rules:[{path:'/project/rules.md',optional:true}],servers:[{name:'example',placeholders:'literal',definition:{command:'node'}}]}),undefined,{stage:staged});
+// @ts-expect-error A caller cannot name an output path in the MCP policy.
+planLayout({...input,mcp:{path:'.custom'}});

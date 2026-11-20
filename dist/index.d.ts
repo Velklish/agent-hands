@@ -1,6 +1,6 @@
 /// <reference types="node" preserve="true" />
 export { applyLayout, parseLayout, planLayout, readLayoutState, LayoutConflictError, LayoutMcpError } from './layout/plan.js';
-export type { LayoutFile, LayoutInput, LayoutPlan, LayoutResult, LayoutState, LayoutResource, LayoutNotice, LayoutApplyOptions, LayoutChangeSet, LayoutMcpPolicy, LayoutDiagnostic } from './layout/plan.js';
+export type { LayoutFile, LayoutInput, LayoutPlan, LayoutResult, LayoutState, LayoutResource, LayoutNotice, LayoutApplyOptions, LayoutChangeSet, LayoutMcpPolicy, LayoutDiagnostic, LayoutRule } from './layout/plan.js';
 export { createNavigation, ensureWorkspaceDirs, runRepositoryCommand, NavigationError, OriginError } from './git/navigation.js';
 export type { NavigationOptions, RepositoryResolution, CheckoutLocation, NavigationProblem } from './git/navigation.js';
 export { isUrl, isDiskPath, urlHost, parseUrl, httpsRepoUrl, RouteError } from './git/address.js';

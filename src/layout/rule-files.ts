@@ -1,5 +1,17 @@
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { fields } from './stdio.js';
+
+export type LayoutRule = string | {path: string; optional?: boolean};
+
+export function selectRuleEntries(entries: readonly unknown[]) {
+  return entries.flatMap(entry => {
+    const {path: file,optional} = typeof entry === 'string' ? {path:entry,optional:false} : fields(entry,'rule',['path','optional']);
+    if (typeof file !== 'string') throw new TypeError('Expected an absolute rule file');
+    if (optional !== undefined && typeof optional !== 'boolean') throw new TypeError('Invalid optional rule flag');
+    return ruleFiles([file],{optional}).map(file=>({file}));
+  });
+}
 
 export function ruleFiles(files: readonly string[], { optional = false } = {}) {
   return files.filter(file => {
@@ -10,6 +22,7 @@ export function ruleFiles(files: readonly string[], { optional = false } = {}) {
   });
 }
 
-export function readRules(files: readonly string[]) {
-  return ruleFiles(files).map(file => ({ file, content: readFileSync(file, 'utf8') }));
+export function readRule(file: string) {
+  if (!lstatSync(file, { throwIfNoEntry: false })?.isFile()) throw new TypeError(`Expected a regular rule file: ${file}`);
+  return readFileSync(file);
 }

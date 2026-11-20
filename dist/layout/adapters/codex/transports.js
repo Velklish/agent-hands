@@ -15,14 +15,16 @@ export function codexServerTransports(text) {
     return out;
 }
 export function readCodexServerTransports(file) {
-    let text;
+    const text = readCodexTransportSource(file);
+    return text === null ? new Map() : codexServerTransports(text);
+}
+export function readCodexTransportSource(file) {
     try {
-        text = readFileSync(file, 'utf8');
+        return readFileSync(file, 'utf8');
     }
     catch (error) {
         if (error.code === 'ENOENT')
-            return new Map();
+            return null;
         throw error;
     }
-    return codexServerTransports(text);
 }

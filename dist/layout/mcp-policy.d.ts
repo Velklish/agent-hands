@@ -11,10 +11,10 @@ export interface LayoutMcpPolicy {
     transportReference?: string;
 }
 export type LayoutDiagnostic = {
-    code: 'unsupported-fields' | 'unsupported-transport' | 'unresolved-placeholder' | 'invalid-timeout' | 'foreign-server' | 'transport-conflict';
+    code: 'unsupported-fields' | 'unsupported-transport' | 'unresolved-placeholder' | 'invalid-timeout' | 'foreign-server' | 'transport-conflict' | 'invalid-document' | 'edited-server' | 'edited-agent-reset' | 'transport-reference-unavailable';
     target: Target;
     path: string;
-    server: string;
+    server?: string;
     field?: string;
     keys?: readonly string[];
     reason?: string;
