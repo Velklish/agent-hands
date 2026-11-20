@@ -233,7 +233,7 @@ function prepareCompatibleServer(raw, adapter, report) {
             report({ code: 'invalid-timeout', server: name, field: key }, `${name}: invalid ${key}`, !adapter.reportsInvalidTimeout);
         }
         else if ((command && ['headers', 'http_headers_helper'].includes(key)) || (url && ['args', 'env'].includes(key)))
-            dropped.push(key);
+            continue;
         else if (serverFields.includes(key))
             known[key] = value;
         else

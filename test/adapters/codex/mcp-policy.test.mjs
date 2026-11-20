@@ -9,8 +9,8 @@ test('Codex prepared native and literal server policies compose in a single conf
   const root=scratch(t);
   const servers=[
     {name:'ready',placeholders:'literal',definition:{command:'node',args:['${SUPPLIED_LITERAL}']}},
-    {name:'install',definition:{command:'node',env:{SAME:'${SAME}',RENAMED:'${OTHER}'},args:['${ARG}'],required:false,tool_timeout_sec:0.0005}},
-    {name:'remote',definition:{url:'https://example.test',headers:{auth:'${TOKEN}',prefix:'Bearer ${TOKEN}'},access:'hidden data'}},
+    {name:'install',definition:{command:'node',env:{SAME:'${SAME}',RENAMED:'${OTHER}'},args:['${ARG}'],headers:{ignored:'opposite transport'},required:false,tool_timeout_sec:0.0005}},
+    {name:'remote',definition:{url:'https://example.test',env:{IGNORED:'opposite transport'},headers:{auth:'${TOKEN}',prefix:'Bearer ${TOKEN}'},access:'hidden data'}},
     {name:'skipped',definition:{other:true}},
   ];
   const plan=planLayout(input(root,'codex',{scope:'mcp',mcp:{compatibility:'report',comments:['Local project settings']},servers}));
@@ -23,6 +23,9 @@ test('Codex prepared native and literal server policies compose in a single conf
   assert.equal(mcp.install.required,false);
   assert.equal(mcp.remote.env_http_headers.auth,'TOKEN');
   assert.equal(mcp.remote.http_headers.prefix,'Bearer ${TOKEN}');
+  assert.equal(mcp.remote.env,undefined);
+  assert.equal(mcp.install.http_headers,undefined);
+  assert.deepEqual(plan.diagnostics[0].keys,['access']);
   assert.equal(mcp.skipped,undefined);
   assert.deepEqual(plan.diagnostics.map(({server,code,field})=>[server,code,field]),[
     ['remote','unsupported-fields',undefined],['skipped','unsupported-transport',undefined],
@@ -30,7 +33,8 @@ test('Codex prepared native and literal server policies compose in a single conf
   ]);
   assert.doesNotMatch(JSON.stringify(plan.diagnostics),/hidden data|Bearer|SUPPLIED_LITERAL/);
   assert.ok(!plan.requiredVars.includes('SUPPLIED_LITERAL'));
-  assert.throws(()=>planLayout(input(root,'codex',{servers:[servers[1]]})),/unresolved placeholder/);
+  assert.throws(()=>planLayout(input(root,'codex',{servers:[servers[1]]})),/Fields do not match/);
+  assert.throws(()=>planLayout(input(root,'codex',{servers:[{name:'native',definition:{command:'node',args:['${ARG}']}}]})),/unresolved placeholder/);
   assert.throws(()=>planLayout(input(root,'codex',{mcp:{compatibility:'report'},servers:[{name:'bad',definition:{command:'node',tool_timeout_sec:0}}]})),e=>e instanceof LayoutMcpError && e.diagnostic.code==='invalid-timeout');
   assert.throws(()=>planLayout(input(root,'codex',{mcp:{comments:['unsafe\n[grafted]']}})),/single-line/);
 });

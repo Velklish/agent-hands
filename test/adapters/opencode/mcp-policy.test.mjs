@@ -8,8 +8,8 @@ test('OpenCode compatibility plans preserve literals, convert native placeholder
   const root=scratch(t);
   const plan=planLayout(input(root,'opencode',{mcp:{compatibility:'report'},servers:[
     {name:'ready',placeholders:'literal',definition:{command:'node',args:['${LITERAL}']}},
-    {name:'native',definition:{command:'${BIN}',args:['${ARG}','${X:-fallback}'],env:{TOKEN:'${TOKEN}'},tool_timeout_sec:0.007}},
-    {name:'remote',definition:{url:'https://example.test/${SITE}',headers:{auth:'Bearer ${TOKEN}'},tool_timeout_sec:0.0005,required:true}},
+    {name:'native',definition:{command:'${BIN}',args:['${ARG}','${X:-fallback}'],headers:{ignored:'opposite transport'},env:{TOKEN:'${TOKEN}'},tool_timeout_sec:0.007}},
+    {name:'remote',definition:{url:'https://example.test/${SITE}',env:{IGNORED:'opposite transport'},headers:{auth:'Bearer ${TOKEN}'},tool_timeout_sec:0.0005,required:true}},
     {name:'bad',definition:{command:'node',tool_timeout_sec:'180',access:'secret data'}},
   ]}));
   const entries=JSON.parse(plan.files[0].content).mcp.servers;
@@ -17,6 +17,7 @@ test('OpenCode compatibility plans preserve literals, convert native placeholder
   assert.deepEqual(entries.native,{type:'local',command:['{env:BIN}','{env:ARG}','${X:-fallback}'],environment:{TOKEN:'{env:TOKEN}'},timeout:{execution:7}});
   assert.deepEqual(entries.remote,{type:'remote',url:'https://example.test/{env:SITE}',headers:{auth:'Bearer {env:TOKEN}'}});
   assert.deepEqual(entries.bad,{type:'local',command:['node']});
+  assert.deepEqual(plan.diagnostics.find(issue=>issue.server==='remote' && issue.code==='unsupported-fields').keys,['required']);
   assert.deepEqual(plan.diagnostics.map(({code,server,field})=>[code,server,field]),[
     ['invalid-timeout','bad','tool_timeout_sec'],['unsupported-fields','bad',undefined],['invalid-timeout','remote','tool_timeout_sec'],
     ['unsupported-fields','remote',undefined],['unresolved-placeholder','native','args[1]'],
