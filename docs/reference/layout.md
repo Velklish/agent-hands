@@ -80,6 +80,27 @@ mode when specified. The caller owns rollback and final commit in this mode. Omi
 to use the standalone transaction. Staged data and rendered previews can contain configuration
 values; don't send them as diagnostics.
 
+### Deliver caller-rendered output
+
+Use `createOutputWriter(root, {files}, options)` when the consumer renders its own files. Stage
+relative paths and bytes with `stage` or copy supporting files with `copyEntries` and `copyFile`.
+Call `preflight()` to check collisions and ownership before writing. `apply()` returns removed
+paths and records hashes in `writer.files`. Save these hashes in your own trusted inventory
+after the caller commits. `adopt` permits taking over an unmanaged destination and
+`writer.released` identifies owned paths to leave in place and exclude from the new inventory.
+Keep the root, inventory and replacement sets under the caller's control.
+
+For a caller-owned transaction, pass an `OutputMutations` sink as the third argument to `apply`.
+Its `write`, `remove` and `bind` methods receive absolute paths. Each method must record a
+reversible change and make it visible before returning. The sink owns commit and rollback.
+Pass secure output paths in the second argument's `paths` set. `artifactLayout` groups prepared
+files into immutable snapshots in a caller-owned store. Its `prepare(group, writer.staged)`
+publishes the snapshot and returns its path, leaving the workspace alias alone until `apply`.
+
+The package root also exposes the source collectors `collectSkills`, `collectSharedDirs`,
+`collectSubagents` and `collectServers`, along with their source parsers and value helpers.
+Use them with a caller-owned catalog for inventory and validation before planning a layout.
+
 Save the returned `state` in trusted caller-controlled storage, separately for each root and target.
 Decode it with `readLayoutState` and pass it back when updating or retiring a delivery. The library
 does not read or write a state file. Matching output bytes do not prove ownership. If an unmanaged

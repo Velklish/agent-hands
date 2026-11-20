@@ -410,7 +410,7 @@ export async function applyLayout(plan: LayoutPlan, previous: LayoutState = { fi
   }
   const nextState = (files: Record<string,string>): LayoutState => ({target:adapter.target, files:{...retainedFiles,...files}, serverKeys, createdMcp:[...created], ...(nextResets && {agentResets:nextResets})});
   if (requestedStage) {
-    writer.validate();
+    writer.preflight();
     const finalFiles = Object.fromEntries(writer.staged.filter(file=>!writer.released.has(file.rel)).map(file=>[file.rel,file.newHash]));
     const changed = writer.staged.filter(file=> file.diskHash !== file.newHash || (process.platform !== 'win32' && file.mode !== null && (lstatSync(file.abs).mode & 0o111) !== file.mode));
     const removes = [...Object.keys(touchedFiles).filter(rel=>!Object.hasOwn(finalFiles,rel) && !writer.released.has(rel) && watched.get(rel) !== null),...erased];

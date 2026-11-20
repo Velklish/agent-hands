@@ -54,13 +54,27 @@ export interface ArtifactChange extends Change {
         target: string | null | undefined;
     }[];
 }
+export interface OutputMutations {
+    write(file: string, bytes: string | Uint8Array, mode?: number | null): void;
+    remove(file: string): void;
+    bind(destination: string, target: string | null): void;
+}
 export interface Artifacts {
     group(rel: string): string | null;
-    commit(root: string, staged: Staged[], old: Ownership): ArtifactChange;
+    commit(root: string, staged: Staged[], old: Ownership, mutations?: OutputMutations): ArtifactChange;
 }
 export interface TransactionOptions {
     atomic?: AtomicOutputs;
     commitBindings?: () => Change;
+}
+export interface OutputWriterOptions {
+    adopt?: boolean;
+    protectEdits?: boolean;
+    artifacts?: Artifacts;
+    text?: WriterMessages;
+    reject?: (message: string) => never;
+    atomicWrite?: typeof writeAtomic;
+    preserveExecuteBits?: boolean;
 }
 export declare function copyEntries(srcAbs: string, destRel: string, options?: CopyOptions): Generator<CopyEntry>;
 export declare class Writer {
@@ -92,14 +106,7 @@ export declare class Writer {
     sources?: Change;
     layout?: ArtifactChange;
     links?: ArtifactChange['links'];
-    constructor(root: string, ownership: Ownership, { adopt, protectEdits, artifacts, text, reject, atomicWrite, }?: {
-        adopt?: boolean;
-        protectEdits?: boolean;
-        artifacts?: Artifacts;
-        text?: WriterMessages;
-        reject?: (message: string) => never;
-        atomicWrite?: typeof writeAtomic;
-    });
+    constructor(root: string, ownership: Ownership, { adopt, protectEdits, artifacts, text, preserveExecuteBits, reject, atomicWrite, }?: OutputWriterOptions);
     stage(relPath: string, content: string | Uint8Array, { origin, adopt, mode, conflictHint }?: {
         origin?: string | null;
         adopt?: boolean;
@@ -109,9 +116,11 @@ export declare class Writer {
     copyDir(srcAbs: string, destRel: string, options?: CopyOptions): void;
     copyFile({ src, rel, origin }: CopyEntry): void;
     transaction<T>(extraPaths: string[], apply: () => Promise<T>, { commitBindings, atomic }?: TransactionOptions): Promise<T>;
-    validate(): void;
-    commit(beforeWrites?: () => void, atomic?: AtomicOutputs): void;
-    apply(beforeWrites?: () => void, atomic?: AtomicOutputs): string[];
-    prune(): string[];
+    preflight(): void;
+    commit(beforeWrites?: () => void, atomic?: AtomicOutputs, mutations?: OutputMutations): void;
+    apply(beforeWrites?: () => void, atomic?: AtomicOutputs, mutations?: OutputMutations): string[];
+    prune(mutations?: OutputMutations): string[];
 }
+export type OutputWriter = Pick<Writer, 'root' | 'staged' | 'files' | 'written' | 'updated' | 'overwrittenEdits' | 'adopted' | 'execFiles' | 'links' | 'replacedFiles' | 'replacedDirs' | 'released' | 'commitBindings' | 'stage' | 'preflight' | 'apply' | 'commit' | 'prune' | 'transaction' | 'copyFile' | 'copyDir'>;
+export declare function createOutputWriter(root: string, ownership: Ownership, options?: OutputWriterOptions): OutputWriter;
 export {};

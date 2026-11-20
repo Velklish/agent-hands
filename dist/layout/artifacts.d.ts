@@ -1,4 +1,10 @@
 import type { Artifacts } from './writer.js';
+interface LayoutEntry {
+    rel: string;
+    newHash: string;
+    mode?: number | null;
+    buf: Buffer | string;
+}
 type Reason = 'broken-link' | 'outside-store' | 'not-directory' | 'foreign-files' | 'modified-artifact' | 'foreign-artifact-files';
 interface Store {
     root: string;
@@ -9,6 +15,8 @@ interface Store {
 }
 export declare function artifactLayout(groups: readonly string[], store: Omit<Store, 'reject'> & {
     reject?: Store['reject'];
-}): Artifacts;
+}): Artifacts & {
+    prepare(group: string, entries: readonly LayoutEntry[]): string | null;
+};
 export declare const artifactGroup: (groups: readonly string[], rel: string) => string | null;
 export {};

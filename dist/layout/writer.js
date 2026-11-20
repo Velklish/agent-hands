@@ -33,11 +33,11 @@ export class Writer {
     released = new Set();
     createdDirs = new Set();
     stagedParents = new Map();
-    constructor(root, ownership, { adopt = false, protectEdits = true, artifacts, text = messages, reject = (message) => { throw new Error(message); }, atomicWrite = writeAtomic, } = {}) {
+    constructor(root, ownership, { adopt = false, protectEdits = true, artifacts, text = messages, preserveExecuteBits = false, reject = (message) => { throw new Error(message); }, atomicWrite = writeAtomic, } = {}) {
         this.root = root;
         this.adopt = adopt;
         this.old = ownership;
-        this.#configuration = { protectEdits, artifacts, text, reject, atomicWrite };
+        this.#configuration = { protectEdits, artifacts, text, reject, atomicWrite, preserveExecuteBits };
         this.staged = [];
         this.conflicts = [];
         this.collisions = [];
@@ -104,7 +104,7 @@ export class Writer {
     }
     copyFile({ src, rel, origin }) {
         const execAtSource = (statSync(src).mode & EXEC_BITS) !== 0;
-        this.stage(rel, readFileSync(src), { origin, mode: execAtSource ? EXEC_BITS : 0 });
+        this.stage(rel, readFileSync(src), { origin, mode: execAtSource ? EXEC_BITS : this.#configuration.preserveExecuteBits ? null : 0 });
     }
     async transaction(extraPaths, apply, { commitBindings, atomic } = {}) {
         const dirs = [...this.replacedDirs].map(rel => {
@@ -170,7 +170,10 @@ export class Writer {
         this.layout?.finalize();
         return result;
     }
-    validate() {
+    preflight() {
+        for (const rel of [...this.replacedFiles, ...this.replacedDirs])
+            if (!isInnerRelPath(rel) || path.resolve(this.root, rel) === this.root)
+                throw new Error('Replacement escapes the root');
         if (this.#configuration.protectEdits) {
             for (const [rel, hash] of Object.entries(this.old.files)) {
                 if (this.stagedRel.has(rel) || this.released.has(rel) || this.#group(rel) || !isInnerRelPath(rel))
@@ -191,18 +194,39 @@ export class Writer {
             this.#configuration.reject(this.#configuration.text.conflict(this.conflicts));
         }
     }
-    commit(beforeWrites, atomic) {
-        this.validate();
+    commit(beforeWrites, atomic, mutations) {
+        this.preflight();
+        if (mutations)
+            for (const staged of this.staged) {
+                if (this.#group(staged.rel) || this.replacedDirs.has(staged.rel))
+                    continue;
+                const current = existsSync(staged.abs) ? sha256(readFileSync(staged.abs)) : null;
+                if (current !== staged.diskHash)
+                    throw new Error(`Staged output changed: ${staged.rel}`);
+            }
         beforeWrites?.();
         if (this.#configuration.artifacts) {
-            this.layout = this.#configuration.artifacts.commit(this.root, this.staged, this.old);
+            this.layout = this.#configuration.artifacts.commit(this.root, this.staged, this.old, mutations);
             this.links = this.layout.links;
         }
         try {
-            for (const rel of this.replacedFiles)
-                rmSync(path.join(this.root, rel));
-            for (const rel of [...this.replacedDirs].sort((a, b) => b.length - a.length))
-                rmdirSync(path.join(this.root, rel));
+            for (const rel of this.replacedFiles) {
+                const file = path.join(this.root, rel);
+                if (mutations)
+                    mutations.remove(file);
+                else
+                    rmSync(file);
+            }
+            for (const rel of [...this.replacedDirs].sort((a, b) => b.length - a.length)) {
+                const file = path.join(this.root, rel);
+                if (mutations) {
+                    if (readdirSync(file).length)
+                        throw new Error(`Expected an empty replacement directory: ${rel}`);
+                    mutations.remove(file);
+                }
+                else
+                    rmdirSync(file);
+            }
             for (const s of this.staged) {
                 if (this.#group(s.rel)) {
                     this.files[s.rel] = s.newHash;
@@ -214,57 +238,74 @@ export class Writer {
                 }
                 if (s.diskHash === s.newHash) {
                     this.files[s.rel] = s.newHash;
-                    if (this.#applyMode(s))
+                    if (this.#applyMode(s, mutations))
                         this.updated.push(s.rel);
                     continue;
                 }
                 if (s.oldHash && s.diskHash !== null && s.diskHash !== s.oldHash)
                     this.overwrittenEdits.push(s.rel);
-                const parent = path.dirname(s.abs);
-                const firstCreated = mkdirSync(parent, { recursive: true });
-                if (this.deferred && firstCreated) {
-                    const first = path.resolve(firstCreated);
-                    for (let dir = path.resolve(parent); dir === first || dir.startsWith(first + path.sep); dir = path.dirname(dir)) {
-                        this.createdDirs.add(dir);
-                        if (dir === first)
-                            break;
-                    }
+                if (mutations) {
+                    const previous = lstatSync(s.abs, { throwIfNoEntry: false });
+                    const current = atomic?.paths.has(s.rel) ? 0o600 : (previous?.mode ?? (0o666 & ~process.umask())) & 0o7777;
+                    mutations.write(s.abs, s.buf, this.#desiredMode(s, current));
                 }
-                if (atomic?.paths.has(s.rel))
-                    this.#configuration.atomicWrite(s.abs, s.buf, { mode: 0o600, stagingDir: atomic.stagingDir });
-                else
-                    writeFileSync(s.abs, s.buf);
-                this.#applyMode(s);
+                else {
+                    const parent = path.dirname(s.abs);
+                    const firstCreated = mkdirSync(parent, { recursive: true });
+                    if (this.deferred && firstCreated) {
+                        const first = path.resolve(firstCreated);
+                        for (let dir = path.resolve(parent); dir === first || dir.startsWith(first + path.sep); dir = path.dirname(dir)) {
+                            this.createdDirs.add(dir);
+                            if (dir === first)
+                                break;
+                        }
+                    }
+                    if (atomic?.paths.has(s.rel))
+                        this.#configuration.atomicWrite(s.abs, s.buf, { mode: 0o600, stagingDir: atomic.stagingDir });
+                    else
+                        writeFileSync(s.abs, s.buf);
+                    this.#applyMode(s);
+                }
                 (s.diskHash === null ? this.written : this.updated).push(s.rel);
                 this.files[s.rel] = s.newHash;
             }
-            this.sources = this.commitBindings?.();
+            if (!mutations)
+                this.sources = this.commitBindings?.();
         }
         catch (error) {
-            if (!this.deferred)
+            if (!this.deferred && !mutations)
                 this.layout?.rollback();
             throw error;
         }
-        if (!this.deferred)
+        if (!this.deferred && !mutations)
             this.layout?.finalize();
     }
-    apply(beforeWrites, atomic) {
-        this.commit(beforeWrites, atomic);
-        return this.prune();
+    apply(beforeWrites, atomic, mutations) {
+        this.commit(beforeWrites, atomic, mutations);
+        return this.prune(mutations);
     }
-    #applyMode(s) {
+    #desiredMode(s, current) {
+        if (s.mode === null || process.platform === 'win32')
+            return current;
+        const execute = s.mode & EXEC_BITS;
+        if (execute)
+            this.execFiles.add(s.rel);
+        return (current & ~EXEC_BITS) | execute;
+    }
+    #applyMode(s, mutations) {
         if (s.mode === null || process.platform === 'win32')
             return false;
         const current = statSync(s.abs).mode & 0o7777;
-        const execute = s.mode & EXEC_BITS;
-        const desired = (current & ~EXEC_BITS) | execute;
-        if (desired !== current)
+        const desired = this.#desiredMode(s, current);
+        if (desired === current)
+            return false;
+        if (mutations)
+            mutations.write(s.abs, s.buf, desired);
+        else
             chmodSync(s.abs, desired);
-        if (execute)
-            this.execFiles.add(s.rel);
-        return desired !== current;
+        return true;
     }
-    prune() {
+    prune(mutations) {
         const removed = [];
         for (const rel of this.released)
             delete this.files[rel];
@@ -292,9 +333,13 @@ export class Writer {
                     if (aliasesNew)
                         continue;
                 }
-                rmSync(abs);
+                if (mutations)
+                    mutations.remove(abs);
+                else
+                    rmSync(abs);
                 removed.push(rel);
-                this.#rmEmptyParents(path.dirname(abs));
+                if (!mutations)
+                    this.#rmEmptyParents(path.dirname(abs));
             }
         }
         return removed;
@@ -312,4 +357,9 @@ export class Writer {
             dir = path.dirname(dir);
         }
     }
+}
+export function createOutputWriter(root, ownership, options) {
+    if (!path.isAbsolute(root))
+        throw new TypeError('Expected an absolute output root');
+    return new Writer(root, ownership, options);
 }

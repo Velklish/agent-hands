@@ -1,6 +1,16 @@
 /// <reference types="node" preserve="true" />
 export { applyLayout, parseLayout, planLayout, readLayoutState, LayoutConflictError, LayoutMcpError } from './layout/plan.js';
 export type { LayoutFile, LayoutInput, LayoutPlan, LayoutResult, LayoutState, LayoutResource, LayoutNotice, LayoutApplyOptions, LayoutChangeSet, LayoutMcpPolicy, LayoutDiagnostic, LayoutRule } from './layout/plan.js';
+export { createOutputWriter, copyEntries } from './layout/writer.js';
+export type { OutputWriter, OutputWriterOptions, OutputMutations, CopyEntry, Staged as StagedOutput, Ownership as OutputOwnership, Artifacts as OutputArtifacts, ArtifactChange as ArtifactOutput, Change as OutputChange, WriterMessages } from './layout/writer.js';
+export { artifactGroup, artifactLayout } from './layout/artifacts.js';
+export { collectSkills, collectSharedDirs, parseFrontmatter, SHARED_DIR } from './layout/skills.js';
+export type { Skill, SkillConflict, SkillSource } from './layout/skills.js';
+export { collectSubagents, parseAgentYaml } from './layout/subagents.js';
+export type { AgentDefinition, AgentSource } from './layout/subagents.js';
+export { collectServers, readServerMap, substituteValues, sameServerConfig, writeToolKey, writeToolRecord } from './layout/mcp.js';
+export type { ServerSource } from './layout/mcp.js';
+export { directoryLink, isInside, removeEntry, removeTemporarySnapshot, sealSnapshot, switchDirectoryBinding } from './layout/fs.js';
 export { createNavigation, ensureWorkspaceDirs, runRepositoryCommand, NavigationError, OriginError } from './git/navigation.js';
 export type { NavigationOptions, RepositoryResolution, CheckoutLocation, NavigationProblem } from './git/navigation.js';
 export { isUrl, isDiskPath, urlHost, parseUrl, httpsRepoUrl, RouteError } from './git/address.js';

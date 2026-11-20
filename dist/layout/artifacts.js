@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, mkdirSync, mkdtempSync, writeFileSync, chmodSync, renameSync, rmdirSync, } from 'node:fs';
 import path from 'node:path';
-import { sha256, toPosix, isInside, switchDirectoryBinding, sealSnapshot, removeTemporarySnapshot } from './fs.js';
+import { sha256, toPosix, isInside, isInnerRelPath, switchDirectoryBinding, sealSnapshot, removeTemporarySnapshot } from './fs.js';
 function filesIn(dir, prefix = '') {
     return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
         const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
@@ -45,6 +45,8 @@ function validateOld(root, group, old, store) {
     return true;
 }
 function publish(entries, group, store) {
+    if (entries.some(entry => !isInnerRelPath(entry.rel) || sha256(entry.buf) !== entry.newHash))
+        throw new Error(`Invalid staged artifact: ${group}`);
     const rows = entries.map((entry) => [entry.rel.slice(group.length + 1), entry.newHash, entry.mode ?? 0]);
     const digest = sha256(JSON.stringify([store.renderer, rows]));
     const root = store.artifacts;
@@ -88,14 +90,26 @@ function publish(entries, group, store) {
     }
 }
 export function artifactLayout(groups, store) {
+    if (groups.some(group => !isInnerRelPath(group)))
+        throw new TypeError('Expected relative artifact groups');
     const group = (rel) => artifactGroup(groups, rel);
     const reject = store.reject ?? ((reason, location, files) => {
         throw new Error(`${location}: ${reason}${files?.length ? ` (${files.join(', ')})` : ''}`);
     });
-    return { group, commit: (root, staged, old) => commitLayout(root, staged, old, groups, group, { ...store, reject }) };
+    const options = { ...store, reject };
+    return {
+        group,
+        prepare(name, entries) {
+            if (!groups.includes(name))
+                throw new Error(`Unknown artifact group: ${name}`);
+            const selected = entries.filter(entry => group(entry.rel) === name).sort((a, b) => a.rel.localeCompare(b.rel));
+            return selected.length ? publish(selected, name, options) : null;
+        },
+        commit: (root, staged, old, mutations) => commitLayout(root, staged, old, groups, group, options, mutations),
+    };
 }
 export const artifactGroup = (groups, rel) => groups.find((prefix) => rel.startsWith(`${prefix}/`)) ?? null;
-function commitLayout(root, staged, old, candidates, sharedGroup, store) {
+function commitLayout(root, staged, old, candidates, sharedGroup, store, mutations) {
     const groups = candidates.filter((group) => staged.some((entry) => sharedGroup(entry.rel) === group)
         || Object.keys(old.files).some((rel) => sharedGroup(rel) === group));
     const plan = groups.map((group) => ({
@@ -111,7 +125,10 @@ function commitLayout(root, staged, old, candidates, sharedGroup, store) {
             if (item.target && item.old && lstatSync(destination).isSymbolicLink()
                 && realpathSync(destination) === realpathSync(item.target))
                 continue;
-            switched.push({ destination, binding: switchDirectoryBinding(destination, item.target ?? null, { hadOld: item.old }) });
+            if (mutations)
+                mutations.bind(destination, item.target ?? null);
+            else
+                switched.push({ destination, binding: switchDirectoryBinding(destination, item.target ?? null, { hadOld: item.old }) });
         }
     }
     catch (error) {

@@ -1,5 +1,11 @@
 /// <reference types="node" preserve="true" />
 export { applyLayout, parseLayout, planLayout, readLayoutState, LayoutConflictError, LayoutMcpError } from './layout/plan.js';
+export { createOutputWriter, copyEntries } from './layout/writer.js';
+export { artifactGroup, artifactLayout } from './layout/artifacts.js';
+export { collectSkills, collectSharedDirs, parseFrontmatter, SHARED_DIR } from './layout/skills.js';
+export { collectSubagents, parseAgentYaml } from './layout/subagents.js';
+export { collectServers, readServerMap, substituteValues, sameServerConfig, writeToolKey, writeToolRecord } from './layout/mcp.js';
+export { directoryLink, isInside, removeEntry, removeTemporarySnapshot, sealSnapshot, switchDirectoryBinding } from './layout/fs.js';
 export { createNavigation, ensureWorkspaceDirs, runRepositoryCommand, NavigationError, OriginError } from './git/navigation.js';
 export { isUrl, isDiskPath, urlHost, parseUrl, httpsRepoUrl, RouteError } from './git/address.js';
 export { WORKSPACE_DIRS, ZONES, REPOS_ZONE, EXTERNAL_ZONE, SANDBOX_ZONE, zoneRoots, zoneRootAt, zoneOfNs, nsUnderZone, repoAbsPath, cloneOf, isCloneDir, listClonedRepos } from './git/layout.js';

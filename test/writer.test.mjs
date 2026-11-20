@@ -7,6 +7,7 @@ import { artifactLayout } from '../dist/layout/artifacts.js';
 import { removeTemporarySnapshot, sha256, switchDirectoryBinding, writeAtomic } from '../dist/layout/fs.js';
 import { Writer } from '../dist/layout/writer.js';
 import { scratch, put } from './fixtures.mjs';
+import { createOutputWriter } from 'agent-hands';
 
 test('copied files keep executable bits and exclude only incidental entries', async t => {
   const dir = scratch(t), root = path.join(dir, 'out'), source = path.join(dir, 'source');
@@ -125,6 +126,64 @@ test('late failure restores executable permissions on changed and unchanged file
     assert.equal(fs.readFileSync(file,'utf8'),'old');
     assert.equal(fs.statSync(file).mode & 0o777,0o640);
   }
+});
+
+test('root writer journals secure writes, owned pruning and shared alias changes through the caller', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'output-writer-'));
+  t.after(() => removeTemporarySnapshot(dir));
+  const root = path.join(dir,'workspace');
+  fs.mkdirSync(root);
+  const old = put(root,'retired','owned'), settings = put(root,'settings.json','previous');
+  const link = path.join(root,'generated');
+  const files = {retired:sha256('owned'),'settings.json':sha256('previous')};
+  const artifacts = artifactLayout(['generated'], {root:dir,artifacts:path.join(dir,'store'),renderer:1});
+  const prepare = () => {
+    const writer = createOutputWriter(root,{files},{artifacts});
+    writer.stage('generated/one','artifact');
+    writer.stage('settings.json','next');
+    writer.preflight();
+    return writer;
+  };
+  const writer = prepare();
+  const target = artifacts.prepare('generated',writer.staged);
+  assert.equal(fs.existsSync(link),false);
+  const undo = [], events = [];
+  const mutations = {
+    bind(file, dest) {
+      assert.equal(file,link);
+      assert.equal(dest,target);
+      fs.symlinkSync(dest,file,process.platform === 'win32' ? 'junction' : 'dir');
+      events.push('bind');
+      undo.push(() => fs.unlinkSync(file));
+    },
+    write(file, bytes, mode) {
+      assert.equal(file,settings);
+      assert.equal(mode,0o600);
+      const prior = fs.readFileSync(file);
+      writeAtomic(file,bytes,{mode});
+      events.push('write');
+      undo.push(() => fs.writeFileSync(file,prior));
+    },
+    remove(file) {
+      assert.equal(file,old);
+      const prior = fs.readFileSync(file);
+      fs.unlinkSync(file);
+      events.push('remove');
+      undo.push(() => fs.writeFileSync(file,prior));
+    },
+  };
+  assert.deepEqual(writer.apply(undefined,{paths:new Set(['settings.json'])},mutations),['retired']);
+  assert.deepEqual(events,['bind','write','remove']);
+  assert.equal(fs.readFileSync(path.join(link,'one'),'utf8'),'artifact');
+  for (const rollback of undo.reverse()) rollback();
+  assert.equal(fs.existsSync(link),false);
+  assert.equal(fs.readFileSync(settings,'utf8'),'previous');
+  assert.equal(fs.readFileSync(old,'utf8'),'owned');
+  const stale = prepare();
+  fs.writeFileSync(settings,'edited');
+  assert.throws(() => stale.apply(undefined,undefined,mutations),/Staged output changed: settings.json/);
+  assert.deepEqual(events,['bind','write','remove']);
+  assert.equal(fs.readFileSync(settings,'utf8'),'edited');
 });
 
 test('shared artifacts are immutable, isolated per consumer, and bindings roll back on a late refusal', async t => {
