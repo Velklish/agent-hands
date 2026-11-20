@@ -8,6 +8,12 @@ import {scratch,put,input} from './fixtures.mjs';
 import {applyLayout,planLayout} from 'agent-hands';
 
 const targets = ['claude','cursor','codex','opencode'];
+const nativeOutput = {
+  claude: { agent: '.md', mcp: '.mcp.json', perKey: true },
+  cursor: { agent: '.md', mcp: '.cursor/mcp.json', perKey: true },
+  codex: { agent: '.toml', mcp: '.codex/config.toml', perKey: false },
+  opencode: { agent: '.md', mcp: 'opencode.json', perKey: true },
+};
 function graph(root, entry, target) {
   const seen = new Set();
   const adapters = path.join(root,'layout/adapters') + path.sep;
@@ -96,9 +102,13 @@ for (const target of targets) test(`${target}: package root applies with all sib
   const foreignOwnership = snapshot(ownership);
   const before = snapshot(root);
   const plan = selection(target);
-  const expectedOwnFiles = planLayout(plan).files.map(file => path.normalize(file.path));
-  const ownPaths = new Set(expectedOwnFiles);
-  for (const own of expectedOwnFiles) {
+  const {agent,mcp,perKey} = nativeOutput[target];
+  const name = `verify-${target}`;
+  const resources = [`.${target}/skills/${name}/SKILL.md`, `.${target}/skills/${name}/refs/guide.md`,
+    `.${target}/agents/${name}${agent}`, `.agents/rules/${target}/0001.md`];
+  const expectedOwnFiles = [...resources,mcp].sort();
+  const ownPaths = new Set(expectedOwnFiles.map(file => path.normalize(file)));
+  for (const own of [...ownPaths]) {
     for (let parent = path.dirname(own); parent !== '.'; parent = path.dirname(parent)) {
       if (!Object.hasOwn(before,parent)) ownPaths.add(parent);
     }
@@ -106,9 +116,11 @@ for (const target of targets) test(`${target}: package root applies with all sib
   const witness = path.join(dir,'selected-state.json');
   const script = put(dir,'apply.mjs',`
     import {planLayout, applyLayout, readLayoutState} from 'agent-hands';
+    import assert from 'node:assert/strict';
     import {readFileSync,writeFileSync} from 'node:fs';
     const prune = process.argv[2] === 'prune';
     const plan = planLayout(prune ? ${JSON.stringify(input(root,target))} : ${JSON.stringify(plan)});
+    assert.deepEqual(plan.files.map(file => file.path).sort(), prune ? [] : ${JSON.stringify(expectedOwnFiles)}, 'unexpected planned paths');
     const previous = prune ? readLayoutState(JSON.parse(readFileSync(${JSON.stringify(witness)},'utf8'))) : undefined;
     const result = await applyLayout(plan,previous);
     writeFileSync(${JSON.stringify(witness)},JSON.stringify(result.state));
@@ -121,7 +133,12 @@ for (const target of targets) test(`${target}: package root applies with all sib
   execFileSync(process.execPath,[script,'apply'],{cwd:dir});
   checkForeign();
   for (const file of expectedOwnFiles) assert.ok(fs.lstatSync(path.join(root,file)).isFile(),file);
-  assert.equal(JSON.parse(fs.readFileSync(witness,'utf8')).target,target);
+  const state = JSON.parse(fs.readFileSync(witness,'utf8'));
+  assert.equal(state.target,target);
+  assert.deepEqual(Object.keys(state.files).sort(), (perKey ? resources : expectedOwnFiles).slice().sort());
+  assert.deepEqual(Object.keys(state.serverKeys), perKey ? [mcp] : []);
+  if (perKey) assert.deepEqual(Object.keys(state.serverKeys[mcp]), ['tool']);
+  assert.deepEqual(state.createdMcp, perKey ? [mcp] : []);
 
   execFileSync(process.execPath,[script,'prune'],{cwd:dir});
   checkForeign();
@@ -134,6 +151,23 @@ for (const target of targets) test(`${target}: package root applies with all sib
     assert.equal(fs.readFileSync(file,'utf8'),bytes);
   }
   checkForeign();
+
+  const engine = path.join(lib,'layout','engine.js');
+  const original = fs.readFileSync(engine,'utf8');
+  const extraPath = `.agents/rules/${siblings[0]}/unexpected-planned.md`;
+  const stageAnchor = 'stageContent({ stage:';
+  assert.ok(original.includes(stageAnchor));
+  fs.writeFileSync(engine,original.replace(stageAnchor,`stage(${JSON.stringify(extraPath)}, 'foreign planned output');\n    ${stageAnchor}`));
+  try {
+    const wrongPlan = spawnSync(process.execPath,[script,'apply'],{cwd:dir,encoding:'utf8'});
+    assert.equal(wrongPlan.status,1);
+    assert.match(wrongPlan.stderr,/unexpected planned paths/);
+    assert.ok(wrongPlan.stderr.includes(extraPath),wrongPlan.stderr);
+    checkForeign();
+    t.diagnostic(`Planned foreign path ${extraPath} rejected before apply (child exit ${wrongPlan.status})`);
+  } finally {
+    fs.writeFileSync(engine,original);
+  }
 
   const adapter = path.join(lib,'layout','adapters',target,'index.js');
   fs.appendFileSync(adapter,`\nimport '../${siblings[0]}/index.js';\n`);
