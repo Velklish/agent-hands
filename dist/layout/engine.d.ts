@@ -1,6 +1,7 @@
 import { type ServerEntry } from './stdio.js';
 import { type ResourceOwner } from './content.js';
 import { type LayoutAdapter, type Target } from './adapter.js';
+import { type LayoutMcpPolicy, type LayoutDiagnostic } from './mcp-policy.js';
 export interface LayoutFile {
     path: string;
     content: string | Uint8Array;
@@ -46,6 +47,8 @@ export interface LayoutInput {
     servers: readonly ServerEntry[];
     rules: readonly string[];
     env?: Readonly<Record<string, string>>;
+    scope?: 'all' | 'resources' | 'mcp';
+    mcp?: LayoutMcpPolicy;
     supportingFiles?: 'strict' | 'skip-nonregular';
     writeTools?: Readonly<Record<string, {
         source: string;
@@ -60,6 +63,12 @@ export interface LayoutPlan {
     rules?: readonly string[];
     resources: readonly LayoutResource[];
     notices: readonly LayoutNotice[];
+    diagnostics: readonly LayoutDiagnostic[];
+    mcpFingerprints?: {
+        path: string;
+        current: Readonly<Record<string, string>>;
+        legacy?: Readonly<Record<string, string>>;
+    };
     requiredVars?: readonly string[];
     writeTools?: readonly {
         server: string;
@@ -71,14 +80,28 @@ export interface LayoutState {
     files: Record<string, string>;
     serverKeys?: Record<string, Record<string, string>>;
     createdMcp?: string[];
+    agentResets?: string[];
 }
 export interface LayoutResult {
     state: LayoutState;
     written: string[];
     updated: string[];
     removed: string[];
+    diagnostics: readonly LayoutDiagnostic[];
+}
+export interface LayoutChangeSet {
+    readonly writes: readonly (LayoutFile & {
+        secure: boolean;
+    })[];
+    readonly removes: readonly string[];
+    readonly state: LayoutState;
+    readonly diagnostics: readonly LayoutDiagnostic[];
+    assertCurrent(): void;
+}
+export interface LayoutApplyOptions {
+    stage?: (changes: LayoutChangeSet) => void | Promise<void>;
 }
 export declare function prepare(value: unknown, select: (target: unknown) => LayoutAdapter): LayoutPlan;
 export declare function readLayoutState(value: unknown): LayoutState;
-export declare function applyLayout(plan: LayoutPlan, previous?: LayoutState): Promise<LayoutResult>;
+export declare function applyLayout(plan: LayoutPlan, previous?: LayoutState, options?: LayoutApplyOptions): Promise<LayoutResult>;
 export {};

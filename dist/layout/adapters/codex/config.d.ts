@@ -1,6 +1,7 @@
 import type { CodexTransport } from './transports.js';
-export declare function renderCodexConfig(servers: Record<string, unknown>, { expandEnv, header }?: {
+export declare function renderCodexConfig(servers: Record<string, unknown>, { expandEnv: expandAll, literal, header }?: {
     expandEnv?: boolean | undefined;
+    literal?: ReadonlySet<string> | undefined;
     header?: string | undefined;
 }): {
     text: string;
@@ -15,6 +16,7 @@ export declare function renderCodexConfig(servers: Record<string, unknown>, { ex
         why: "url" | "embedded" | "command" | "argument" | "renamed";
         variable?: string;
     }[];
+    empty: boolean;
 };
 export declare function codexTransportConflicts(servers: Record<string, unknown> | null | undefined, userServers?: ReadonlyMap<string, CodexTransport> | null): {
     name: string;

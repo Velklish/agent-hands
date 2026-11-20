@@ -109,6 +109,7 @@ export declare class Writer {
     copyDir(srcAbs: string, destRel: string, options?: CopyOptions): void;
     copyFile({ src, rel, origin }: CopyEntry): void;
     transaction<T>(extraPaths: string[], apply: () => Promise<T>, { commitBindings, atomic }?: TransactionOptions): Promise<T>;
+    validate(): void;
     commit(beforeWrites?: () => void, atomic?: AtomicOutputs): void;
     apply(beforeWrites?: () => void, atomic?: AtomicOutputs): string[];
     prune(): string[];

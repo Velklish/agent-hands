@@ -78,7 +78,7 @@ for (const target of targets) test(`${target}: package root applies with all sib
     const [layout, adapters, name] = path.relative(sourceDist,file).split(path.sep);
     return layout !== 'layout' || adapters !== 'adapters' || !name || name === target;
   }});
-  fs.symlinkSync(path.resolve('node_modules/yaml'),path.join(dir,'node_modules/yaml'),process.platform === 'win32' ? 'junction' : 'dir');
+  for (const dependency of ['yaml','smol-toml']) fs.symlinkSync(path.resolve('node_modules',dependency),path.join(dir,'node_modules',dependency),process.platform === 'win32' ? 'junction' : 'dir');
   const siblings = targets.filter(other => other !== target);
   for (const other of siblings) assert.equal(fs.existsSync(path.join(lib,'layout','adapters',other)),false);
   graph(lib,`layout/adapters/${target}/index.js`,target);

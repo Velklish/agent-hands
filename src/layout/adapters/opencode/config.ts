@@ -24,13 +24,14 @@ function configValue(v: unknown, { expandEnv, note }: { expandEnv: boolean; note
   return translated;
 }
 
-export function renderOpencodeConfig(servers: Record<string, unknown> | null | undefined, { expandEnv = true } = {}) {
+export function renderOpencodeConfig(servers: Record<string, unknown> | null | undefined, { expandEnv: expandAll = true, literal = new Set<string>() as ReadonlySet<string> } = {}) {
   const out: Record<string, unknown> = Object.create(null);
   const dropped = [];
   const skipped = [];
   const unresolved: { name: string; where: string; why: string }[] = [];
   const invalidTimeouts: string[] = [];
   for (const [name, cfg0] of Object.entries(servers ?? {})) {
+    const expandEnv = expandAll || literal.has(name);
     const cfg = isObject(cfg0) ? cfg0 : {};
     if (!cfg.url && !cfg.command) {
       skipped.push(name);

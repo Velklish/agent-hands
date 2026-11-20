@@ -1,5 +1,6 @@
-export declare function renderOpencodeConfig(servers: Record<string, unknown> | null | undefined, { expandEnv }?: {
+export declare function renderOpencodeConfig(servers: Record<string, unknown> | null | undefined, { expandEnv: expandAll, literal }?: {
     expandEnv?: boolean | undefined;
+    literal?: ReadonlySet<string> | undefined;
 }): {
     text: string;
     document: {

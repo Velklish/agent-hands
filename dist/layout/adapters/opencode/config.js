@@ -23,13 +23,14 @@ function configValue(v, { expandEnv, note }) {
         note('unsupported placeholder syntax');
     return translated;
 }
-export function renderOpencodeConfig(servers, { expandEnv = true } = {}) {
+export function renderOpencodeConfig(servers, { expandEnv: expandAll = true, literal = new Set() } = {}) {
     const out = Object.create(null);
     const dropped = [];
     const skipped = [];
     const unresolved = [];
     const invalidTimeouts = [];
     for (const [name, cfg0] of Object.entries(servers ?? {})) {
+        const expandEnv = expandAll || literal.has(name);
         const cfg = isObject(cfg0) ? cfg0 : {};
         if (!cfg.url && !cfg.command) {
             skipped.push(name);
