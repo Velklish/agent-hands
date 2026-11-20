@@ -8,6 +8,7 @@ export interface RegistrationRequest {
     readonly plugin: string;
     readonly step: 'add' | 'install' | 'update';
 }
+export declare function pinnedRegistrationVersion({ platform, arch, binarySha256 }: Pick<RegistrationRequest, 'platform' | 'arch' | 'binarySha256'>): string;
 export declare function registrationPostcondition(request: RegistrationRequest, before: string): (after: string | null) => boolean;
 export interface RegistrationSnapshot {
     readonly settings: string | null;

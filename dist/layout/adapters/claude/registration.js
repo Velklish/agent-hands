@@ -44,10 +44,15 @@ function readSettings(text, { platform, step }) {
         throw new Error('Unsupported project settings');
     return doc;
 }
+export function pinnedRegistrationVersion({ platform, arch, binarySha256 }) {
+    const binary = platform === 'linux' ? '2e2496c9a8065df93acb0fca2d341f59a6b8777649b2e025ab8c9bcd5eef61f3'
+        : platform === 'darwin' ? '85d8c08707fcfd1e78ffa0204eefbc6ec9e4fe22f375fb2767ef85d957ed3161' : null;
+    if (binary === null || binarySha256 !== binary || arch !== 'arm64')
+        throw new Error('Unsupported registration binary');
+    return '2.1.311 (Claude Code)';
+}
 export function registrationPostcondition(request, before) {
-    const binary = request.platform === 'linux' ? '2e2496c9a8065df93acb0fca2d341f59a6b8777649b2e025ab8c9bcd5eef61f3'
-        : request.platform === 'darwin' ? '85d8c08707fcfd1e78ffa0204eefbc6ec9e4fe22f375fb2767ef85d957ed3161' : null;
-    if (binary === null || request.binarySha256 !== binary || request.version !== '2.1.311 (Claude Code)' || request.arch !== 'arm64')
+    if (request.version !== pinnedRegistrationVersion(request))
         throw new Error('Unsupported registration binary');
     if (!name(request.marketplace) || !name(request.plugin) || !request.directory.startsWith('/') || !['add', 'install', 'update'].includes(request.step))
         throw new Error('Unsupported registration request');
@@ -170,7 +175,14 @@ export function registrationEvidence(request, project, version, before, after, e
         if (selected.length !== 1 || selected[0].version !== version || typeof selected[0].installPath !== 'string' || !selected[0].installPath.startsWith('/') || (expectedPath !== undefined && selected[0].installPath !== expectedPath))
             return false;
         const prior = Object.hasOwn(previous, subject) ? previous[subject] : [];
-        if (!Array.isArray(prior) || prior.filter(ours).length !== (request.step === 'update' ? 1 : 0))
+        if (!Array.isArray(prior))
+            return false;
+        const previousProject = prior.filter(ours);
+        if (request.step === 'update') {
+            if (previousProject.length !== 1 || !record(previousProject[0]) || typeof previousProject[0].version !== 'string' || previousProject[0].version === version)
+                return false;
+        }
+        else if (previousProject.length)
             return false;
         previous[subject] = prior.filter(r => !ours(r));
         installed[subject] = rows.filter(r => !ours(r));

@@ -129,6 +129,7 @@ def exercise(binary, root, include_note):
           before["known"] == after["known"] and before["installed"] == after["installed"] and
           subject not in installed(after))
     moved.rename(source)
+    (source / 'fixture.txt').write_text('first')
 
     result, before, after = step("retry", "install", subject, "--scope", "project")
     expected["enabledPlugins"][subject] = True
@@ -139,6 +140,11 @@ def exercise(binary, root, include_note):
 
     result, before, after = step("repeat", "install", subject, "--scope", "project")
     check("repeat install leaves targets unchanged", result.returncode == 0 and before == after)
+
+    (source / "fixture.txt").write_text("second")
+    result, before, after = step("same-version-update", "update", subject, "--scope", "project")
+    check("same-version update reports current and leaves registry unchanged", result.returncode == 0
+          and "already" in (result.stdout + result.stderr).lower() and before == after)
 
     write_json(source / ".claude-plugin/plugin.json", dict(name="subject", version="1.0.1"))
     result, before, after = step("update", "update", subject, "--scope", "project")

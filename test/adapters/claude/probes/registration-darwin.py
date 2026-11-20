@@ -35,6 +35,7 @@ def lifecycle(run, binary, project, home, variant):
           'plugins':[{'name':p,'source':'./'+p} for p in ['workspace','neighbor']]})
     source = market/'workspace/.claude-plugin/plugin.json'
     write(source,{'name':'workspace','version':'1.0.0'})
+    (source.parents[1]/'fixture.txt').write_text('first')
     write(market/'neighbor/.claude-plugin/plugin.json',{'name':'neighbor','version':'1.0.0'})
     callbacks = [{'type':'command','command':'printf neighbor'}, {'type':'command','command':'printf subject','timeout':4}]
     hooks = {event:[{'hooks':copy.deepcopy(callbacks)}, {'hooks':[{'type':'command','command':'printf after','timeout':30}]}]
@@ -153,6 +154,11 @@ def lifecycle(run, binary, project, home, variant):
     exact=snap()
     observed('repeat',install,0,obj)
     equal('repeat: bytes',snap(),exact)
+    payload = source.parents[1]/'fixture.txt'
+    payload.write_text('second')
+    same_version, state = observed('same-version-update',['update',subject,'--scope','project'],0,obj)
+    equal('same-version update: registry unchanged',state['installed'],exact['installed'])
+    equal('same-version update: native reports current','already' in (same_version.stdout + same_version.stderr).lower(),True)
     write(source,{'name':'workspace','version':'1.0.1'})
     _,state=observed('update',['update',subject,'--scope','project'],0,obj,['installed'])
     identity(state,subject,'1.0.1')

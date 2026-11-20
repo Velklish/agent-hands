@@ -62,3 +62,9 @@ for (const mod of [
   assert.throws(() => registrationPostcondition(mac,JSON.stringify(unsupported)),/project settings/);
 }
 console.log('Registration macOS shape allowlist and negative controls passed');
+
+const updating = {...request,step:'update'};
+const updated = {...success,installations:installations({...row,version:'1.0.1',installPath:'/fixture/cache/1.0.1'})};
+assert.ok(registrationEvidence(updating,'/fixture/project','1.0.1',success,updated,0,'/fixture/cache/1.0.1'));
+assert.ok(!registrationEvidence(updating,'/fixture/project','1.0.0',success,success,0,row.installPath));
+assert.ok(!registrationEvidence(updating,'/fixture/project','1.0.2',success,updated,0,'/fixture/cache/1.0.2'));

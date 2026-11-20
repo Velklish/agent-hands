@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Plan and apply command hooks across selected harnesses with explicit enablement, callback ownership, native registration checks and recoverable batch transactions.
+- Plan and apply command hooks across selected harnesses with explicit enablement, callback ownership, native registration checks and recoverable batch transactions. Require a new plugin version when the payload changes.
 - Run hook planning, application, inspection and recovery from the installed CLI with an explicit configuration and redacted diagnostics.
 - Expose source collection, prepared file delivery and shared artifact snapshots from the package root for callers with their own catalog and transaction.
 - Allow an explicit account lock for hook batches and report native registration action and version in prepared transactions.

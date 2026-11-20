@@ -5,7 +5,7 @@ import { sha256 } from '../../fs.js';
 import { snapshot, type TargetChange } from '../../../hooks/hook-journal.js';
 import type { ExternalHookChange } from '../../../hooks/hook-operation.js';
 import type { WorkspaceRegistration, WorkspaceRegistrationPlan } from '../../../hooks/options.js';
-import { inspectRegistration, registrationEvidence, registrationPreflight, registrationUnchanged, type RegistrationRequest } from './registration.js';
+import { inspectRegistration, pinnedRegistrationVersion, registrationEvidence, registrationPreflight, registrationUnchanged, type RegistrationRequest } from './registration.js';
 
 export function registrationPath(root:string) {
   return path.join(root,'.agent-hands/hooks/claude/registration.json');
@@ -35,7 +35,9 @@ export function plugin(root:string,settings:TargetChange,input:WorkspaceRegistra
   const before = read([settings.before,...changes.slice(0,2).map(c => c.before)]);
   const current = inspectRegistration({marketplace,plugin,directory},root,before);
   const receipt = changes.at(-1)!;
-  const prior = receipt.before === null ? input.legacy : JSON.parse(receipt.before);
+  let prior;
+  try { prior = receipt.before === null ? input.legacy : JSON.parse(receipt.before); }
+  catch { throw new Error('Invalid registration receipt'); }
   if (receipt.before !== null && (!prior || JSON.stringify(prior) !== receipt.before || Object.keys(prior).length !== 5 || prior.plugin !== plugin || prior.marketplace !== marketplace || prior.directory !== directory)) throw new Error('Invalid registration receipt or source mismatch');
   if (prior && (typeof prior.version !== 'string' || !/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(prior.version) || !/^[a-f0-9]{64}$/.test(prior.fingerprint))) throw new Error('Invalid plugin registration receipt');
   const destination = (v:string) => path.join(home,'.claude/plugins/cache',marketplace,plugin,v);
@@ -44,19 +46,38 @@ export function plugin(root:string,settings:TargetChange,input:WorkspaceRegistra
   const steps: ExternalHookChange[] = [];
   const registration: WorkspaceRegistrationPlan = {action:current.installed ? 'update' : 'install',version,
     ...(typeof current.version === 'string' && {previousVersion:current.version})};
-  if (prior?.fingerprint === fingerprint && current.version === version)
+  if (prior && current.version === version) {
+    if (prior.fingerprint !== fingerprint) throw new Error('Changed plugin source requires a new version');
     return {changes,steps,checkSource,registration:{...registration,action:'current' as const}};
-  const binary = realpathSync(input.executable), binarySha256 = sha256(readFileSync(binary));
-  const request: RegistrationRequest = {binarySha256,version:'2.1.311 (Claude Code)',platform:process.platform,arch:process.arch,marketplace,plugin,directory,step:current.installed?'update':'install'};
+  }
+  let binary: string, binarySha256: string;
+  try {
+    binary = realpathSync(input.executable);
+    if (!lstatSync(binary).isFile()) throw new Error();
+    binarySha256 = sha256(readFileSync(binary));
+  } catch { throw new Error('Unsupported registration binary'); }
+  const identity = {binarySha256,platform:process.platform,arch:process.arch};
+  const request: RegistrationRequest = {...identity,version:pinnedRegistrationVersion(identity),marketplace,plugin,directory,step:current.installed?'update':'install'};
   registrationPreflight(request,root,before);
+  let versionConfirmed = false;
+  const launch = (args: string[], readVersion = false) => spawnSync(binary,args,{
+    cwd:root, timeout:readVersion ? 10_000 : 120_000, killSignal:'SIGKILL', maxBuffer:4096,
+    encoding:'utf8', stdio:['ignore',readVersion ? 'pipe' : 'ignore','ignore'],
+    env:{HOME:home,CLAUDE_CONFIG_DIR:path.join(home,'.claude'),PATH:process.env.PATH,DISABLE_AUTOUPDATER:'1',DISABLE_TELEMETRY:'1'},
+  });
   for (const step of [...(current.marketplace ? [] : ['add'] as const),current.installed ? 'update' as const : 'install' as const]) {
     const config = {...request,step}, protectedFiles = [settings.file,...files.slice(0,2)];
     steps.push({files:protectedFiles,retain:files.slice(0,2),run:() => {
       checkSource();
+      if (!versionConfirmed) {
+        if (sha256(readFileSync(binary)) !== binarySha256) throw new Error('Plugin binary changed');
+        const version = launch(['--version'],true);
+        if (version.error || version.status !== 0 || version.stdout?.trim() !== config.version) throw new Error('Unconfirmed registration binary version');
+        versionConfirmed = true;
+      }
       if (sha256(readFileSync(binary)) !== binarySha256) throw new Error('Plugin binary changed');
       const args = step === 'add' ? ['marketplace','add',directory] : [step,`${plugin}@${marketplace}`];
-      const result = spawnSync(binary,['plugin',...args,'--scope','project'],{cwd:root,timeout:120000,stdio:'ignore',env:{HOME:home,CLAUDE_CONFIG_DIR:path.join(home,'.claude'),PATH:process.env.PATH,DISABLE_AUTOUPDATER:'1',DISABLE_TELEMETRY:'1'}});
-      return result.status;
+      return launch(['plugin',...args,'--scope','project']).status;
     },verify:(a,b,exit) => {checkSource();return registrationEvidence(config,root,version,read(a),read(b),exit,destination(version));},verifyFailure:(a,b) => registrationUnchanged(config,read(a),read(b))});
   }
   return {changes,steps,checkSource,registration};
