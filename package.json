@@ -1,0 +1,18 @@
+{
+  "name": "agent-hands",
+  "description": "Agent workspace layouts and repository navigation.",
+  "author": "Velklish (https://github.com/Velklish)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Velklish/agent-hands.git"
+  },
+  "homepage": "https://github.com/Velklish/agent-hands#readme",
+  "bugs": "https://github.com/Velklish/agent-hands/issues",
+  "engines": {
+    "node": ">=26"
+  },
+  "devDependencies": {
+    "backslop": "https://codeload.github.com/Velklish/backslop/tar.gz/refs/tags/v1.0.0"
+  }
+}

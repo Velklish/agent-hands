@@ -1,0 +1,13 @@
+{
+  "prefix": "AH",
+  "docs": "docs",
+  "cli": "npx --no-install backslop",
+  "source": "https://github.com/Velklish/backslop.git",
+  "gates": [
+    "npx --no-install backslop lint"
+  ],
+  "version": "1.0.0",
+  "lang": "en",
+  "tools": [],
+  "hooks": []
+}
