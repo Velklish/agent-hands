@@ -6,12 +6,13 @@ How agent-hands works today — from the code, not intention. Intent and rationa
 |---|---|
 | [Foundation](#foundation) | Current repository contents and verification |
 | [Planning boundaries](#planning-boundaries) | Areas reserved for future implementation |
+| [Personal voice profile](../../profiles/my-voice/README.md) | Standalone calibration and local profile application |
 
 ## Foundation
 
 The repository contains package metadata, an MIT license and the Backslop development
-workflow. There is no product source code, executable, JavaScript entry point or test
-suite. `npm ci --registry=https://registry.npmjs.org` installs only the pinned tracker.
+workflow. The standalone voice profile runs on Python's standard library.
+`npm ci --registry=https://registry.npmjs.org` installs only the pinned tracker.
 `npx --no-install backslop lint` checks the documentation and tracker;
 `npx --no-install backslop status` shows planned work. Neither command tests a product.
 
@@ -22,6 +23,5 @@ the lockfile records its integrity. Updating it is an explicit project decision.
 ## Planning boundaries
 
 Future work covers repository navigation, owned application of workspace resources,
-runtime and hooks, English user-facing rules with configurable voice, and standalone
-CLI/API packaging. These are planning areas, not implemented subsystems. Their task
+runtime and hooks, English user-facing rules, and standalone CLI/API packaging. Their task
 cards define acceptance checks without prescribing speculative command names or APIs.

@@ -1,10 +1,11 @@
 # AH-5 · Provide English rules and configurable voice
 
-- **Order:** 50
 - **Scope:** [Planning boundaries](../../reference/README.md#planning-boundaries)
 - **Created:** 2026-11-20
 - **Dependencies:** none
 - **Cost:** —
+- **Previous order:** 50
+- **Taken:** 2026-11-20
 
 ## Context
 

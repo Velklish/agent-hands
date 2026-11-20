@@ -4,9 +4,9 @@ An independent project for managing agent workspace layouts and repository navig
 
 ## Current state
 
-This repository contains the project foundation, documentation and a Backslop tracker.
-The product CLI and JavaScript API are not implemented. No product commands or releases
-are available yet. The intended package and executable name is `agent-hands`.
+The `agent-hands` CLI and JavaScript API are not available from this checkout yet.
+The standalone [personal voice profile tool](profiles/my-voice/README.md) is available
+from source with Python 3.10 or newer. It can use supplied samples without reading local history.
 
 ## Development
 
