@@ -7,7 +7,7 @@ import { SHARED_DIR, validateSkill } from './skills.js';
 import { stageContent, type ResourceOwner } from './content.js';
 import { readRules } from './rule-files.js';
 import { mergeMcpServers, object, renderMcpJson, resolveEnvironment, sameServerConfig, serverHash, valueEnvironmentNames, writeToolRecord } from './mcp.js';
-import { isTarget, type LayoutAdapter, type Target, type McpDocument } from './adapter.js';
+import { isMergedMcpPath, isTarget, type LayoutAdapter, type Target, type McpDocument } from './adapter.js';
 
 export interface LayoutFile { path: string; content: string | Uint8Array; executable?: boolean }
 export type LayoutResource = { path: string; relativePath: string; owner: ResourceOwner };
@@ -129,14 +129,14 @@ export function prepare(value: unknown, select: (target: unknown) => LayoutAdapt
     const output = toPosix(rel);
     if (!resources.has(output)) resources.set(output, { path: output, relativePath: toPosix(relativePath), owner });
   };
-  const stage = (rel: string, content: string | Uint8Array, executable = false, origin = rel) => {
+  const stage = (rel: string, content: string | Uint8Array, executable?: boolean, origin = rel) => {
     const key = toPosix(rel).toLowerCase();
     const digest = sha256(content);
     const previous = entries.get(key);
-    if (previous && (previous.path !== toPosix(rel) || hashes.get(key) !== digest || !!previous.executable !== executable)) {
+    if (previous && (previous.path !== toPosix(rel) || hashes.get(key) !== digest || previous.executable !== executable)) {
       throw new LayoutConflictError(toPosix(rel), origins.get(key), origin);
     }
-    entries.set(key, { path: toPosix(rel), content, ...(executable ? { executable } : {}) });
+    entries.set(key, { path: toPosix(rel), content, ...(executable === undefined ? {} : { executable }) });
     hashes.set(key, digest);
     origins.set(key, origin);
   };
@@ -214,16 +214,17 @@ function readHashes(value: unknown) {
 
 export function readLayoutState(value: unknown): LayoutState {
   const { target, files, serverKeys, createdMcp } = fields(value, 'ownership state', ['target','files', 'serverKeys', 'createdMcp']);
+  if (target !== undefined && !isTarget(target)) throw new TypeError('Invalid ownership target');
   const ownedFiles = readHashes(files);
   const keyMap = serverKeys === undefined ? {} : fields(serverKeys, 'MCP ownership', object(serverKeys) ? Object.keys(serverKeys) : []);
   const ownedKeys = Object.fromEntries(Object.entries(keyMap).map(([rel, hashes]) => {
+    if (!isMergedMcpPath(rel, target)) throw new TypeError(`Invalid MCP state path: ${rel}`);
     return [rel, readHashes(hashes)];
   }));
   const created = createdMcp === undefined ? [] : stringList(createdMcp, 'Expected an array of created MCP paths');
   for (const rel of created) {
     if (!Object.hasOwn(ownedKeys, rel)) throw new TypeError(`Untracked created MCP path: ${rel}`);
   }
-  if (target !== undefined && !isTarget(target)) throw new TypeError('Invalid ownership target');
   return { ...(target === undefined ? {} : { target }), files: ownedFiles, serverKeys: ownedKeys, createdMcp: created };
 }
 
@@ -247,7 +248,7 @@ export async function applyLayout(plan: LayoutPlan, previous: LayoutState = { fi
     const stat = lstatSync(abs, { throwIfNoEntry: false });
     if (stat && (!stat.isFile() || !Object.hasOwn(state.files, file.path))) throw new Error(`Output conflict: ${file.path}`);
     if (stat && stat.nlink > 1 && file.path !== adapter.configPath) throw new Error(`Refusing hard-linked output: ${file.path}`);
-    writer.stage(file.path, file.content, { mode: file.executable ? 0o111 : null });
+    writer.stage(file.path, file.content, { mode: file.executable === undefined ? null : file.executable ? 0o111 : 0 });
   }
   let serverKeys = { ...state.serverKeys };
   const extra: string[] = [];

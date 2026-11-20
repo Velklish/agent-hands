@@ -1,3 +1,4 @@
+import type { CodexTransport } from './transports.js';
 export declare function renderCodexConfig(servers: Record<string, unknown>, { expandEnv, header }?: {
     expandEnv?: boolean | undefined;
     header?: string | undefined;
@@ -15,7 +16,7 @@ export declare function renderCodexConfig(servers: Record<string, unknown>, { ex
         variable?: string;
     }[];
 };
-export declare function codexTransportConflicts(servers: Record<string, unknown> | null | undefined, userServers?: Map<string, 'http' | 'stdio' | null> | null): {
+export declare function codexTransportConflicts(servers: Record<string, unknown> | null | undefined, userServers?: ReadonlyMap<string, CodexTransport> | null): {
     name: string;
     ours: "http" | "stdio";
     theirs: "http" | "stdio";

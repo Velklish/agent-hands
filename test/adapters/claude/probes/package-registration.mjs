@@ -1,0 +1,51 @@
+// Wrap the process launch for this probe only. The package still selects the binary,
+// arguments and native postcondition. No call can leave the fixture's OS sandbox.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import cp from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+import { applyWorkspaceHooks,planWorkspaceHooks } from 'agent-hands';
+
+const [base,binary,encoded] = process.argv.slice(2), prefix = JSON.parse(encoded);
+const root = path.join(base,'package-project'), home = path.join(base,'package-home'), directory = path.join(root,'market');
+const write = (f,v) => { fs.mkdirSync(path.dirname(f),{recursive:true}); fs.writeFileSync(f,JSON.stringify(v)); };
+fs.mkdirSync(home); fs.mkdirSync(root);
+const source = path.join(directory,'subject/.claude-plugin/plugin.json');
+const settingsFile = path.join(root,'.claude/settings.json');
+const foreign = {hooks:[{type:'command',command:'printf neighbor'}]};
+const initial = {enableAllProjectMcpServers:true,skillOverrides:{fixture:'off'},enabledPlugins:{'neighbor@other':false},extraKnownMarketplaces:{},hooks:{Stop:[foreign]}};
+write(source,{name:'subject',version:'1.0.0'});
+write(path.join(directory,'.claude-plugin/marketplace.json'),{name:'fixture-package',owner:{name:'Fixture'},plugins:[{name:'subject',source:'./subject'}]});
+write(settingsFile,initial);
+const original = cp.spawnSync;
+const calls=[];
+cp.spawnSync = (bin,args,options) => {
+  assert.equal(bin,binary); assert.equal(options.cwd,root);
+  const r = original(prefix[0],[...prefix.slice(1),bin,...args],{...options,env:{HOME:home,CLAUDE_CONFIG_DIR:path.join(home,'.claude'),TMPDIR:path.join(base,'tmp')},stdio:'pipe',encoding:'utf8'});
+  calls.push([args,r.status]); return r;
+};
+syncBuiltinESMExports();
+const registration = {marketplace:'fixture-package',plugin:'subject',directory,version:'1.0.0',fingerprint:'a'.repeat(64),executable:binary,accountHome:home};
+const input = {root,target:'claude',enabled:true,hooks:[{owner:'fixture',event:'SessionStart',matcher:'startup|resume',command:'printf fixture',timeout:4}],registration};
+assert.equal(planWorkspaceHooks(input).changed,true); assert.equal(calls.length,0);
+assert.equal(applyWorkspaceHooks(input).changed,true); assert.deepEqual(calls.map(c=>c[1]),[0,0]);
+assert.equal(applyWorkspaceHooks(input).changed,false); assert.equal(calls.length,2);
+const settings = JSON.parse(fs.readFileSync(settingsFile));
+assert.deepEqual(settings.hooks.Stop,[foreign]);assert.equal(settings.enabledPlugins['neighbor@other'],false);
+assert.equal(settings.enabledPlugins['subject@fixture-package'],true);
+const registry = path.join(home,'.claude/plugins/installed_plugins.json');
+const selected = () => JSON.parse(fs.readFileSync(registry)).plugins['subject@fixture-package'];
+assert.deepEqual(selected().map(r=>[r.projectPath,r.version]),[[root,'1.0.0']]);
+write(source,{name:'subject',version:'1.0.1'});
+applyWorkspaceHooks({...input,registration:{...registration,version:'1.0.1',fingerprint:'b'.repeat(64)}});
+assert.deepEqual(selected().map(r=>[r.projectPath,r.version]),[[root,'1.0.1']]);
+const settingsBefore = fs.readFileSync(settingsFile), installedBefore = fs.readFileSync(registry);
+const receiptFile = path.join(root,'.agent-hands/hooks/claude/registration.json');
+const priorReceipt = fs.readFileSync(receiptFile);
+fs.renameSync(path.dirname(path.dirname(source)),path.join(directory,'absent'));
+assert.throws(() => applyWorkspaceHooks({...input,registration:{...registration,version:'1.0.2',fingerprint:'c'.repeat(64)}}));
+assert.deepEqual(fs.readFileSync(settingsFile),settingsBefore);assert.deepEqual(fs.readFileSync(registry),installedBefore);
+assert.deepEqual(fs.readFileSync(receiptFile),priorReceipt);
+assert.equal(fs.existsSync(path.join(root,'.agent-hands/hooks/pending')),false);
+console.log(JSON.stringify({check:'package plan, install, repeat, update and exact project identity',passed:true}));

@@ -3,6 +3,15 @@ import type { LayoutFile } from './engine.js';
 const targets = ['claude', 'cursor', 'codex', 'opencode'] as const;
 export type Target = typeof targets[number];
 export const isTarget = (value: unknown): value is Target => targets.some(target => target === value);
+// These document paths are also wire identifiers in persisted per-key ownership state.
+export const mergedMcpPath = Object.freeze({
+  claude: '.mcp.json', cursor: '.cursor/mcp.json', opencode: 'opencode.json',
+} satisfies Partial<Record<Target, string>>);
+
+export function isMergedMcpPath(rel: string, target?: Target) {
+  return target === undefined ? Object.values(mergedMcpPath).some(path => path === rel)
+    : target in mergedMcpPath && mergedMcpPath[target as keyof typeof mergedMcpPath] === rel;
+}
 export interface McpDocument { path: string; schema?: string; section?: string; key: string; servers: Record<string, unknown> }
 export interface LayoutAdapter {
   target: Target; skillsDir: string; agentsDir: string; ext: string; configPath: string;

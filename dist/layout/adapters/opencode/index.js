@@ -1,5 +1,5 @@
 import { readOnlyAgent, yamlValue } from '../../subagents.js';
-import { requireMcpSupport } from '../../adapter.js';
+import { mergedMcpPath, requireMcpSupport } from '../../adapter.js';
 import { object } from '../../mcp.js';
 import { renderOpencodeConfig } from './config.js';
 export function transpileOpencode(a) {
@@ -23,7 +23,7 @@ export function transpileOpencode(a) {
     return fm.join('\n');
 }
 const target = 'opencode';
-const path = 'opencode.json';
+const path = mergedMcpPath.opencode;
 export const adapter = {
     target, skillsDir: '.opencode/skills', agentsDir: '.opencode/agents', ext: 'md',
     renderAgent: transpileOpencode, configPath: path,

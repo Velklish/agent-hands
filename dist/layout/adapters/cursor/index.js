@@ -1,4 +1,5 @@
 import { readOnlyAgent, yamlValue } from '../../subagents.js';
+import { mergedMcpPath } from '../../adapter.js';
 import { renderMcpJson } from '../../mcp.js';
 export function transpileCursor(a) {
     const fm = ['---', `name: ${yamlValue(a.name)}`, `description: ${yamlValue(a.description)}`];
@@ -10,7 +11,7 @@ export function transpileCursor(a) {
     return fm.join('\n');
 }
 const target = 'cursor';
-const path = '.cursor/mcp.json';
+const path = mergedMcpPath.cursor;
 export const adapter = {
     target, skillsDir: '.cursor/skills', agentsDir: '.cursor/agents', ext: 'md',
     renderAgent: transpileCursor, configPath: path,

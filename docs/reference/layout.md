@@ -39,6 +39,12 @@ does not read or write a state file. Matching output bytes do not prove ownershi
 file or key conflicts, or if an owned output changed since the previous application, the library
 refuses the conflicting change. Apply an empty selection with its previous state to retire that
 delivery. Files and ownership records from other targets are not part of that operation.
+`readLayoutState` rejects unknown per-key MCP ownership paths and paths belonging to a different
+target. Codex owns its whole configuration file and has no per-key MCP ownership.
+
+On POSIX systems copied resources mirror the source's executable status. A change of executable
+status counts as an update even when the bytes are unchanged. If a permission change fails,
+application fails and rolls back instead of reporting success with the wrong permissions.
 
 See [bundled instructions and example](../../assets/README.md) for a nonempty rule and skill selection.
 Run `npm run test:layout` for the strict build, declaration consumer, native format fixtures and

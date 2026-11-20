@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
-import {scratch,put} from './fixtures.mjs';
+import {planLayout} from 'agent-hands';
+import {input,scratch,put} from './fixtures.mjs';
 import {collectSkills, collectSharedDirs,renderSkillsIndex} from '../dist/layout/skills.js';
-import {collectServers,sameServerConfig} from '../dist/layout/mcp.js';
+import {collectServers,sameServerConfig,writeToolKey,writeToolRecord} from '../dist/layout/mcp.js';
 import {collectSubagents,yamlValue} from '../dist/layout/subagents.js';
 import {parse} from 'yaml';
 const entry = (root,name) => ({dirAbs:path.join(root,name),source:name,ownerLabel:name,coords:name,relBase:name});
@@ -37,15 +39,64 @@ test('ordered sources, overrides, selection before parsing, missing declarations
   }
   assert.equal(collectSkills([first,first]).conflicts.length,0);
   assert.equal(collectSkills([first,{...next,overrides:['sample']}]).skills[0].source,'next');
+  const all=collectSkills([first]);
+  assert.deepEqual(all.skills.map(s=>({name:s.name,dir:s.dirAbs,link:s.mdRel})),[
+    {name:'sample',dir:path.join(first.dirAbs,'sample'),link:'first/sample/SKILL.md'},
+  ]);
+  assert.match(all.errors[0],/broken\/SKILL.md/);
 });
 test('server map comparison, soft failures and source attribution',t=>{
   const root=scratch(t);const docs=['{"one":{"command":"node","env":{"B":"2","A":"1"}}}', '{','{"one":{"env":{"A":"1","B":"2"},"command":"node"},"two":{"command":"other"}}','{"one":{"command":"changed"}}','[]'];
   const errors=[];const result=collectServers(docs.map((s,i)=>({file:put(root,`${i}.json`,s),label:`source ${i}`,provenance:`${i}`})),{reject:m=>errors.push(m)});
   assert.equal(errors.length,3);assert.match(errors[0],/1.json/);assert.match(errors[1],/source 2.*source 3/);assert.match(errors[2],/4.json/);assert.equal(result.servers.one.command,'node');assert.equal(result.servers.two.command,'other');assert.equal(result.serverOwner.one,'2');
   assert.equal(sameServerConfig({a:['a','b']},{a:['b','a']}),false);assert.equal(sameServerConfig({a:1},{}),false);
+  assert.equal(sameServerConfig({a:1},{a:2}),false);
 });
+
+test('write-tool definitions require a source and compare the set of classified tools',()=>{
+  for(const value of [null,[],{}, {source:'',write:[]},{source:'catalog',write:['']},{source:'catalog',write:[42]}]) {
+    assert.equal(writeToolRecord(value),false);
+  }
+  assert.equal(writeToolRecord({source:'catalog',write:[]}),true);
+  assert.equal(writeToolKey(['write','approve','write']),writeToolKey(['approve','write']));
+  assert.notEqual(writeToolKey(['write']),writeToolKey(['write','approve']));
+});
+
+for (const [kind,doc] of [['null','null'],['list','[{"command":"node"}]'],['string','"not a map"'],['broken JSON','{']]) {
+  test(`malformed server map (${kind}) can be reported and skipped or rejected with its address`,t=>{
+    const root = scratch(t), file = put(root,'invalid.json',doc);
+    const sources = [{label:'invalid',file},{label:'next',file:put(root,'next.json','{"next":{"command":"node"}}')}];
+    const expected = kind === 'broken JSON' ? /Invalid JSON/ : /expected a map/;
+    const problem = message => message.includes(file) && expected.test(message);
+    const diagnostics = [];
+    const {servers} = collectServers(sources,{reject:message=>diagnostics.push(message)});
+    assert.deepEqual(servers,{next:{command:'node'}});
+    assert.equal(diagnostics.length,1);
+    assert.ok(problem(diagnostics[0]),diagnostics[0]);
+    assert.throws(()=>collectServers(sources),error=>error instanceof Error && problem(error.message));
+    assert.throws(()=>collectServers(sources,{reject:message=>{throw new Error(message)}}),error=>error instanceof Error && problem(error.message));
+  });
+}
 test('canonical agent collection requires fields, rejects invalid lines and duplicate sources',t=>{
   const root=scratch(t),sources=['one','two'].map(s=>entry(root,s));const yaml='name: sample\ndescription: |\n  first\n  next\ntools: [read, grep]\nprompt: Try it\n';
   put(root,'one/sample.yaml',yaml);assert.equal(collectSubagents(sources)[0].description,'first\nnext\n');
   for(const [body,error] of [[yaml,/one.*two/],['name: broken',/description/],['invalid line',/invalid/i]]){put(root,'two/example.yml',body);assert.throws(()=>collectSubagents(sources),error)}
+});
+
+test('canonical descriptions survive native markdown round trips for each applicable target', t => {
+  const root=scratch(t), source=entry(root,'catalog');
+  const file=put(root,'catalog/agent.yml','name: sample\ndescription: |\n  first\n  next\nprompt: |\n  Exact body\n');
+  for (const target of ['claude','cursor','opencode']) {
+    for (const [description,encoded] of [['Plain description','description: Plain description'],['Task: review','description: "Task: review"'],['first\nnext\n',null]]) {
+      const definition=encoded ?? 'description: |\n  first\n  next';
+      fs.writeFileSync(file,`name: sample\n${definition}\nprompt: |\n  Exact body\n`);
+      const [agent]=collectSubagents([source]);
+      assert.equal(agent.description,description);
+      const [output]=planLayout(input(root,target,{subagents:[{name:agent.name,description:agent.description,prompt:agent.prompt}]})).files;
+      const [,frontmatter,body]=output.content.split('---');
+      assert.equal(parse(frontmatter).description,description);
+      assert.equal(body,`\n\n${agent.prompt}`);
+      if (encoded) assert.ok(frontmatter.includes(encoded));
+    }
+  }
 });

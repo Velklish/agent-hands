@@ -1,4 +1,5 @@
 import { yamlValue } from '../../subagents.js';
+import { mergedMcpPath } from '../../adapter.js';
 import { renderMcpJson } from '../../mcp.js';
 const CLAUDE_TOOLS = new Map([
     ['read', 'Read'], ['grep', 'Grep'], ['glob', 'Glob'], ['bash', 'Bash'],
@@ -15,7 +16,7 @@ export function transpileClaude(a) {
     return fm.join('\n');
 }
 const target = 'claude';
-const path = '.mcp.json';
+const path = mergedMcpPath.claude;
 export const adapter = {
     target, skillsDir: '.claude/skills', agentsDir: '.claude/agents', ext: 'md',
     renderAgent: transpileClaude, configPath: path,

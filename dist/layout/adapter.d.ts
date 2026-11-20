@@ -3,6 +3,12 @@ import type { LayoutFile } from './engine.js';
 declare const targets: readonly ["claude", "cursor", "codex", "opencode"];
 export type Target = typeof targets[number];
 export declare const isTarget: (value: unknown) => value is Target;
+export declare const mergedMcpPath: Readonly<{
+    claude: string;
+    cursor: string;
+    opencode: string;
+}>;
+export declare function isMergedMcpPath(rel: string, target?: Target): boolean;
 export interface McpDocument {
     path: string;
     schema?: string;
