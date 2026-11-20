@@ -30,7 +30,7 @@ export type { RuntimeTarget, EntrypointOptions } from './runtime.js';
 export { bundledAssets } from './resources.js';
 export { applyWorkspaceHooks, applyPreparedWorkspaceHooks, inspectWorkspaceHookOperation, inspectWorkspaceHookOwnership, planWorkspaceHooks, prepareWorkspaceHooks, recoverWorkspaceHooks } from './hooks/workspace.js';
 export type { PendingWorkspaceHooks, PreparedWorkspaceHooks, PreparedWorkspaceHookResult } from './hooks/workspace.js';
-export type { WorkspacePreferences, WorkspaceRegistration, WorkspaceRegistrationPlan, WorkspaceRegistrationOutcome } from './hooks/options.js';
+export type { WorkspaceHookDiagnostic, WorkspacePreferences, WorkspaceRegistration, WorkspaceRegistrationPlan, WorkspaceRegistrationOutcome } from './hooks/options.js';
 export type { WorkspaceParticipant } from './hooks/hook-operation.js';
 export { workspaceHookOutcome, type HookOutcome } from './hooks/outcome.js';
 export type { WorkspaceHook, WorkspaceHookBatch, WorkspaceHookBatchScope, WorkspaceHookInput, WorkspaceHookResult, WorkspaceHookScope } from './hooks/workspace.js';

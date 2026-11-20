@@ -1,3 +1,8 @@
+export interface WorkspaceHookDiagnostic {
+    readonly code: 'preference-conflict';
+    readonly target: 'claude';
+    readonly field: 'enableProjectServers' | 'localMarketplaces' | 'enabledPlugins' | 'disabledSkills';
+}
 export interface WorkspacePreferences {
     enableProjectServers?: boolean;
     disabledSkills?: readonly string[];

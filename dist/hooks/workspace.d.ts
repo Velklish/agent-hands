@@ -1,6 +1,6 @@
 import { type Target } from '../layout/adapter.js';
 import { type WorkspaceParticipant } from './hook-operation.js';
-import type { WorkspacePreferences, WorkspaceRegistration, WorkspaceRegistrationPlan, WorkspaceRegistrationOutcome } from './options.js';
+import type { WorkspaceHookDiagnostic, WorkspacePreferences, WorkspaceRegistration, WorkspaceRegistrationPlan, WorkspaceRegistrationOutcome } from './options.js';
 export interface WorkspaceHook {
     owner: string;
     event: string;
@@ -29,6 +29,7 @@ export interface WorkspaceHookInput extends WorkspaceHookScope {
 export interface WorkspaceHookResult {
     changed: boolean;
     shifted: boolean;
+    diagnostics?: readonly WorkspaceHookDiagnostic[];
 }
 export interface WorkspaceHookBatch {
     root: string;
@@ -64,6 +65,7 @@ export declare function inspectWorkspaceHookOwnership(input: WorkspaceHookScope)
 export type PendingWorkspaceHooks = {
     pending: false;
     registration: false;
+    blockedBy?: 'another-project';
 } | {
     pending: true;
     registration: boolean;

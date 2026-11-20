@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import {applyWorkspaceHooks,planWorkspaceHooks} from 'agent-hands';
-import {scratch} from '../../fixtures.mjs';
+import {applyPreparedWorkspaceHooks,applyWorkspaceHooks,planWorkspaceHooks,prepareWorkspaceHooks} from 'agent-hands';
+import {put,scratch} from '../../fixtures.mjs';
 
 const empty = {extraKnownMarketplaces:{},enabledPlugins:{},skillOverrides:{}};
 for (const [name,initial,expected] of [
@@ -31,4 +31,21 @@ test('an external edit or an old field-only receipt is not proof of container cr
     applyWorkspaceHooks({...input,preferences:{}});
     assert.deepEqual(JSON.parse(fs.readFileSync(file)),variant==='edit'?{skillOverrides:{neighbor:'on'},theme:'dark'}:{skillOverrides:{}});
   }
+});
+
+
+test('public hook operations report differing foreign preferences without exposing keys or values',async t => {
+  const root=scratch(t);
+  const settings={enableAllProjectMcpServers:false,skillOverrides:{'fixture-entry':'fixture-value',equal:'off'}};
+  const file=put(root,'.claude/settings.json',JSON.stringify(settings));
+  const input={root,target:'claude',enabled:true,hooks:[],preferences:{enableProjectServers:true,disabledSkills:['fixture-entry','equal']}};
+  const expected={changed:false,shifted:false,diagnostics:[
+    {code:'preference-conflict',target:'claude',field:'enableProjectServers'},
+    {code:'preference-conflict',target:'claude',field:'disabledSkills'},
+  ]};
+  assert.deepEqual(planWorkspaceHooks(input),expected);
+  assert.deepEqual(applyWorkspaceHooks(input),expected);
+  assert.deepEqual(await applyPreparedWorkspaceHooks(prepareWorkspaceHooks(input),{id:'fixture',async stage(){},async finish(){}}),expected);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file)),settings);
+  assert.equal(fs.existsSync(path.join(root,'.agent-hands/hooks/claude/preferences.json')),false);
 });

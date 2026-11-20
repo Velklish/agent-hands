@@ -111,7 +111,7 @@ function runHookCommand(command: HookCommand, args: string[]) {
   const {root} = input;
   const pending = inspectWorkspaceHookOperation({root, accountHome});
   if (command === 'hooks-inspect') {
-    if (pending.pending) return pending;
+    if (pending.pending || pending.blockedBy) return pending;
     const ownership = targets.map(target => {
       const receipt = inspectWorkspaceHookOwnership({root, target});
       return {target, ownership: receipt && {owners: receipt.owners.length, released: receipt.released.length}};
@@ -119,7 +119,10 @@ function runHookCommand(command: HookCommand, args: string[]) {
     return {...pending, ownership};
   }
 
-  if (!pending.pending) return {recovered:false};
+  if (!pending.pending) {
+    if (pending.blockedBy) throw new HookCliError('An account hook operation is pending in another workspace');
+    return {recovered:false};
+  }
   if (pending.registration !== registration || Boolean(pending.registration || pending.accountScoped) !== Boolean(accountHome) ||
       pending.targets.length !== targets.length || !pending.targets.every(target => targets.some(selected => selected === target)))
     throw new HookCliError('Recovery requires the original hook targets and registration account. See hooks-inspect.');

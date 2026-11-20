@@ -7,6 +7,7 @@ export declare const hooks: {
     preferences?: ((root: string, wanted: import("../../../index.js").WorkspacePreferences, legacy?: import("../../../index.js").WorkspacePreferences) => {
         projectDocument: (text: string | null, original: string | null) => string | null;
         change: () => import("../../../hooks/hook-journal.js").TargetChange;
+        diagnostics: readonly import("../../../index.js").WorkspaceHookDiagnostic[];
     }) | undefined;
     preferencePath?: ((root: string) => string) | undefined;
     plugin?: ((root: string, settings: import("../../../hooks/hook-journal.js").TargetChange, input: import("../../../index.js").WorkspaceRegistration) => {

@@ -6,7 +6,7 @@ import { inspectHookOwnership, prepareHookDocument } from './hook-delivery.js';
 import { assertHookOperationIdle, commitHookOperation, commitWithParticipant, findHookOperation, recoverWithParticipant, recoverHookOperation, withAccountLock, type ExternalHookChange, type WorkspaceParticipant } from './hook-operation.js';
 import { snapshot } from './hook-journal.js';
 import { sha256 } from '../layout/fs.js';
-import type { WorkspacePreferences, WorkspaceRegistration, WorkspaceRegistrationPlan, WorkspaceRegistrationOutcome } from './options.js';
+import type { WorkspaceHookDiagnostic, WorkspacePreferences, WorkspaceRegistration, WorkspaceRegistrationPlan, WorkspaceRegistrationOutcome } from './options.js';
 
 export interface WorkspaceHook { owner: string; event: string; command: string; matcher?: string; timeout?: number }
 export interface WorkspaceHookScope { root: string; target: Target }
@@ -20,7 +20,7 @@ export interface WorkspaceHookInput extends WorkspaceHookScope {
   preferences?: WorkspacePreferences;
   registration?: WorkspaceRegistration;
 }
-export interface WorkspaceHookResult { changed: boolean; shifted: boolean }
+export interface WorkspaceHookResult { changed: boolean; shifted: boolean; diagnostics?: readonly WorkspaceHookDiagnostic[] }
 export interface WorkspaceHookBatch { root: string; selections: readonly Omit<WorkspaceHookInput,'root'>[]; accountHome?:string }
 export interface WorkspaceHookBatchScope { root: string; targets: readonly Target[]; accountHome?:string }
 
@@ -77,7 +77,7 @@ function prepareSelection(input: WorkspaceHookInput) {
     changes.push(...plan.changes); steps = plan.steps; checkSource = plan.checkSource;
     registration = Object.freeze({target:'claude',...plan.registration});
   }
-  return {scope,changes,steps,checkSource,registration,result:{changed:steps.length > 0 || changes.some(c => c.before !== c.after),shifted}};
+  return {scope,changes,steps,checkSource,registration,diagnostics:projection?.diagnostics ?? [],result:{changed:steps.length > 0 || changes.some(c => c.before !== c.after),shifted}};
 }
 function prepare(input: WorkspaceHookInput | WorkspaceHookBatch) {
   if (!input || typeof input !== 'object') throw new TypeError('Invalid workspace hook input');
@@ -89,12 +89,19 @@ function prepare(input: WorkspaceHookInput | WorkspaceHookBatch) {
   const registrationAccount = canonicalAccountHome(selections.find(s => s.registration)?.registration?.accountHome);
   if (explicitAccount && registrationAccount && explicitAccount !== registrationAccount) throw new Error('Hook registration account does not match the batch account');
   const account = explicitAccount ?? registrationAccount;
+  if (account) {
+    const shared = accountScope(locations(selections[0]).scope,account);
+    const pending = findAccountOperation(shared);
+    if (pending && pending.pointers[0] !== shared.pointers[0]) throw new Error('Account hook operation pending in another project');
+  }
   const plans = [...selections].sort((a,b) => a.target.localeCompare(b.target)).map(prepareSelection);
   const changes = plans.flatMap(p => p.changes);
   const scope = accountScope({...plans[0].scope,targets:changes.map(row => row.file)},account);
   assertHookOperationIdle(scope);
   const registrations = Object.freeze(plans.flatMap(p => p.registration ? [p.registration] : []));
-  return { changes,steps:plans.flatMap(p => p.steps),registrations,checkSources:() => plans.forEach(p => p.checkSource?.()),scope,account,result:{changed:plans.some(p => p.result.changed),shifted:plans.some(p => p.result.shifted)} };
+  const diagnostics = plans.flatMap(p => p.diagnostics);
+  return { changes,steps:plans.flatMap(p => p.steps),registrations,checkSources:() => plans.forEach(p => p.checkSource?.()),scope,account,
+    result:{changed:plans.some(p => p.result.changed),shifted:plans.some(p => p.result.shifted),...(diagnostics.length ? {diagnostics} : {})} };
 }
 function canonicalAccountHome(home?:string) {
   if (home === undefined) return undefined;
@@ -105,6 +112,12 @@ function accountScope<T extends {pointers:string[];directory:string}>(scope:T,ho
   if (!home) return scope;
   const privateRoot = path.join(home,'.agent-hands','account-hooks');
   return {...scope,directory:path.join(privateRoot,'transaction'),pointers:[...scope.pointers,path.join(privateRoot,'pending')]};
+}
+function findAccountOperation(scope: {pointers:readonly string[];directory:string}) {
+  const accountPointer = scope.pointers[1];
+  const pending = findHookOperation(scope.directory,[accountPointer]);
+  if (pending && (pending.pointers.length !== 2 || pending.pointers[1] !== accountPointer)) throw new Error('Unexpected account hook operation scope');
+  return pending;
 }
 declare const prepared: unique symbol;
 export interface PreparedWorkspaceHooks extends WorkspaceHookResult {
@@ -143,7 +156,8 @@ export function inspectWorkspaceHookOwnership(input:WorkspaceHookScope) {
   assertHookOperationIdle(scope);
   return inspectHookOwnership({target,document,state});
 }
-export type PendingWorkspaceHooks = {pending:false;registration:false} | {pending:true;registration:boolean;targets:Target[];accountScoped?:true};
+export type PendingWorkspaceHooks = {pending:false;registration:false;blockedBy?:'another-project'} |
+  {pending:true;registration:boolean;targets:Target[];accountScoped?:true};
 export function inspectWorkspaceHookOperation({root,accountHome}:{root:string;accountHome?:string}):PendingWorkspaceHooks {
   if (!path.isAbsolute(root)) throw new TypeError('Absolute workspace path required');
   const account = canonicalAccountHome(accountHome);
@@ -154,15 +168,17 @@ export function inspectWorkspaceHookOperation({root,accountHome}:{root:string;ac
   // A workspace pointer describes the selection; it never supplies a filesystem destination.
   let recorded: {pointers:readonly string[];targets:readonly string[]}|null = null;
   if (raw !== null) {
-    const ref = JSON.parse(raw);
+    let ref;
+    try { ref = JSON.parse(raw); } catch { throw new Error('Invalid workspace operation pointer'); }
     if (!ref || !Array.isArray(ref.pointers) || !Array.isArray(ref.targets)) throw new Error('Invalid workspace operation pointer');
     recorded = ref;
   } else {
     recorded = findHookOperation(localDirectory,[pointer]);
     if (!recorded && account) {
       const shared = accountScope({directory:localDirectory,pointers:[pointer]},account);
-      const pending = findHookOperation(shared.directory,shared.pointers);
-      if (pending?.pointers[0] === pointer) recorded = pending;
+      const pending = findAccountOperation(shared);
+      if (pending && pending.pointers[0] !== pointer) return {pending:false,registration:false,blockedBy:'another-project'};
+      recorded = pending;
     }
   }
   if (!recorded) return {pending:false,registration:false};

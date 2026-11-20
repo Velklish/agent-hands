@@ -1,12 +1,12 @@
 import { createRequire } from 'node:module';
 import type { HookEntry, HookTarget, Slot } from './hook-plan.js';
-import type { WorkspacePreferences, WorkspaceRegistration, WorkspaceRegistrationPlan } from './options.js';
+import type { WorkspaceHookDiagnostic, WorkspacePreferences, WorkspaceRegistration, WorkspaceRegistrationPlan } from './options.js';
 import type { TargetChange } from './hook-journal.js';
 import type { ExternalHookChange } from './hook-operation.js';
 
 export type Fields = Record<string, unknown>;
 export interface HookFormat {
-  preferences?(root:string,wanted:WorkspacePreferences,legacy?:WorkspacePreferences):{projectDocument:(text:string|null,original:string|null)=>string|null;change:()=>TargetChange};
+  preferences?(root:string,wanted:WorkspacePreferences,legacy?:WorkspacePreferences):{projectDocument:(text:string|null,original:string|null)=>string|null;change:()=>TargetChange;diagnostics:readonly WorkspaceHookDiagnostic[]};
   preferencePath?(root:string):string;
   plugin?(root:string,settings:TargetChange,input:WorkspaceRegistration):{changes:TargetChange[];steps:ExternalHookChange[];checkSource:()=>void;registration:WorkspaceRegistrationPlan};
   registrationFiles?(root:string,home:string):string[];
