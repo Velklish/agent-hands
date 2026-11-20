@@ -25,9 +25,9 @@ export function plugin(root, settings, input) {
     const current = inspectRegistration({ marketplace, plugin, directory }, root, before);
     const receipt = changes.at(-1);
     const prior = receipt.before === null ? input.legacy : JSON.parse(receipt.before);
-    if (receipt.before !== null && (!prior || prior.plugin !== plugin || prior.marketplace !== marketplace || prior.directory !== directory))
-        throw new Error('Registration receipt belongs to another source');
-    if (prior && (typeof prior.version !== 'string' || !/^[a-f0-9]{64}$/.test(prior.fingerprint)))
+    if (receipt.before !== null && (!prior || JSON.stringify(prior) !== receipt.before || Object.keys(prior).length !== 5 || prior.plugin !== plugin || prior.marketplace !== marketplace || prior.directory !== directory))
+        throw new Error('Invalid registration receipt or source mismatch');
+    if (prior && (typeof prior.version !== 'string' || !/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(prior.version) || !/^[a-f0-9]{64}$/.test(prior.fingerprint)))
         throw new Error('Invalid plugin registration receipt');
     const destination = (v) => path.join(home, '.claude/plugins/cache', marketplace, plugin, v);
     if (current.installed !== !!prior || (prior && (prior.version !== current.version || current.installPath !== destination(prior.version))) || (current.marketplace && !current.installed))

@@ -47,6 +47,10 @@ export declare function planWorkspaceHooks(input: WorkspaceHookInput | Workspace
 export declare function applyPreparedWorkspaceHooks(token: PreparedWorkspaceHooks, participant: WorkspaceParticipant): Promise<WorkspaceHookResult>;
 export declare function applyWorkspaceHooks(input: WorkspaceHookInput | WorkspaceHookBatch): WorkspaceHookResult;
 type RecoveryScope = WorkspaceHookScope | WorkspaceHookBatchScope;
+export declare function inspectWorkspaceHookOwnership(input: WorkspaceHookScope): {
+    owners: string[];
+    released: readonly string[];
+} | null;
 export type PendingWorkspaceHooks = {
     pending: false;
     registration: false;

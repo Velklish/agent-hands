@@ -19,7 +19,7 @@ export type { Contact, ZoneState, StatusIssue } from './git/state.js';
 export { enterEntrypoint, entrypointArgv, parseRuntimeTarget, supportsNode } from './runtime.js';
 export type { RuntimeTarget, EntrypointOptions } from './runtime.js';
 export { bundledAssets } from './resources.js';
-export { applyWorkspaceHooks, applyPreparedWorkspaceHooks, inspectWorkspaceHookOperation, planWorkspaceHooks, prepareWorkspaceHooks, recoverWorkspaceHooks } from './hooks/workspace.js';
+export { applyWorkspaceHooks, applyPreparedWorkspaceHooks, inspectWorkspaceHookOperation, inspectWorkspaceHookOwnership, planWorkspaceHooks, prepareWorkspaceHooks, recoverWorkspaceHooks } from './hooks/workspace.js';
 export type { PendingWorkspaceHooks, PreparedWorkspaceHooks } from './hooks/workspace.js';
 export type { WorkspacePreferences, WorkspaceRegistration } from './hooks/options.js';
 export type { WorkspaceParticipant } from './hooks/hook-operation.js';

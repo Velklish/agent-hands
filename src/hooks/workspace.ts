@@ -2,7 +2,7 @@ import path from 'node:path';
 import { realpathSync } from 'node:fs';
 import { isTarget, type Target } from '../layout/adapter.js';
 import { format } from './format.js';
-import { prepareHookDocument } from './hook-delivery.js';
+import { inspectHookOwnership, prepareHookDocument } from './hook-delivery.js';
 import { assertHookOperationIdle, commitHookOperation, commitWithParticipant, findHookOperation, recoverWithParticipant, recoverHookOperation, withAccountLock, type ExternalHookChange, type WorkspaceParticipant } from './hook-operation.js';
 import { snapshot } from './hook-journal.js';
 import { sha256 } from '../layout/fs.js';
@@ -109,6 +109,11 @@ export function applyWorkspaceHooks(input: WorkspaceHookInput | WorkspaceHookBat
   return result;
 }
 type RecoveryScope = WorkspaceHookScope | WorkspaceHookBatchScope;
+export function inspectWorkspaceHookOwnership(input:WorkspaceHookScope) {
+  const {scope,target,document,state} = locations(input);
+  assertHookOperationIdle(scope);
+  return inspectHookOwnership({target,document,state});
+}
 export type PendingWorkspaceHooks = {pending:false;registration:false} | {pending:true;registration:boolean;targets:Target[]};
 export function inspectWorkspaceHookOperation({root,accountHome}:{root:string;accountHome?:string}):PendingWorkspaceHooks {
   if (!path.isAbsolute(root)) throw new TypeError('Absolute workspace path required');

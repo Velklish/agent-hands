@@ -2,7 +2,7 @@ import path from 'node:path';
 import { realpathSync } from 'node:fs';
 import { isTarget } from '../layout/adapter.js';
 import { format } from './format.js';
-import { prepareHookDocument } from './hook-delivery.js';
+import { inspectHookOwnership, prepareHookDocument } from './hook-delivery.js';
 import { assertHookOperationIdle, commitHookOperation, commitWithParticipant, findHookOperation, recoverWithParticipant, recoverHookOperation, withAccountLock } from './hook-operation.js';
 import { snapshot } from './hook-journal.js';
 import { sha256 } from '../layout/fs.js';
@@ -109,6 +109,11 @@ export function applyWorkspaceHooks(input) {
     if (result.changed)
         withAccountLock(account, scope, () => commitHookOperation(scope, changes, steps));
     return result;
+}
+export function inspectWorkspaceHookOwnership(input) {
+    const { scope, target, document, state } = locations(input);
+    assertHookOperationIdle(scope);
+    return inspectHookOwnership({ target, document, state });
 }
 export function inspectWorkspaceHookOperation({ root, accountHome }) {
     if (!path.isAbsolute(root))
