@@ -9,3 +9,5 @@
 - Load only the selected local history readers through the shared calibration command.
 - Add read-only repository lookup and zone inspection, explicit clone and fast-forward operations, and an optional GitLab transport client.
 - Accept valid relative checkout paths from nested working directories even when the same argument is not a valid namespace.
+- Plan and apply selected workspace resources with per-target ownership and independent harness adapters.
+- Include portable English rules, a workspace template and an optional question-writing skill.
