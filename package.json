@@ -22,7 +22,6 @@
   "devDependencies": {
     "acorn": "8.15.0",
     "backslop": "https://codeload.github.com/Velklish/backslop/tar.gz/refs/tags/v1.0.0",
-    "smol-toml": "1.9.0",
     "typescript": "6.0.3"
   },
   "scripts": {
@@ -37,7 +36,8 @@
   },
   "dependencies": {
     "yaml": "2.9.1",
-    "@types/node": "26.6.6"
+    "@types/node": "26.6.6",
+    "smol-toml": "1.9.0"
   },
   "files": [
     "bin",

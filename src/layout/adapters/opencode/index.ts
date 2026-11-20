@@ -1,5 +1,5 @@
 import { type AgentDefinition, readOnlyAgent, yamlValue } from '../../subagents.js';
-import { type LayoutAdapter, requireMcpSupport } from '../../adapter.js';
+import { mergedMcpPath, type LayoutAdapter, requireMcpSupport } from '../../adapter.js';
 import { object } from '../../mcp.js';
 import { renderOpencodeConfig } from './config.js';
 
@@ -24,7 +24,7 @@ export function transpileOpencode(a: AgentDefinition) {
 }
 
 const target = 'opencode';
-const path = 'opencode.json';
+const path = mergedMcpPath.opencode;
 export const adapter: LayoutAdapter = {
   target, skillsDir: '.opencode/skills', agentsDir: '.opencode/agents', ext: 'md',
   renderAgent: transpileOpencode, configPath: path,

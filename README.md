@@ -44,6 +44,6 @@ The standalone [voice profile tool](profiles/my-voice/README.md) requires Python
 
 ## Development
 
-`npm ci --registry=https://registry.npmjs.org` installs locked dependencies. `npm run test:all` checks strict types, the Node and Python suites, Git mutation probes and installed-package examples. `npm run test:package` checks the candidate tarball and simulates an exact-tag Git install in a temporary mirror. Neither creates a release tag in this project. `npx --no-install backslop gates` checks the [contributor workflow](AGENTS.md).
+`npm ci --registry=https://registry.npmjs.org` installs locked dependencies. `npm run test:all` checks strict types, the Node and Python suites, Git mutation probes and installed-package examples. `npm run test:package` checks the candidate tarball and simulates an exact-tag Git install in a temporary mirror. Neither creates a release tag in this project. `npx --no-install backslop gates` checks the [contributor workflow](https://github.com/Velklish/agent-hands/blob/main/AGENTS.md).
 
 [MIT](LICENSE), copyright Velklish.

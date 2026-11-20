@@ -19,7 +19,14 @@ test('links: nested paths, titles, references, anchors, lists, fences, inline co
  ].join('\n'));const ok=put(dir,'ok.md','ok'),space=put(dir,'has space.md','ok');assert.deepEqual(relativeLinks(f),['../ok.md','missing.md','../has space.md','not here.md','resumed','visible','adjacent','unmatched','../ok.md','missing.md']);assert.deepEqual(brokenLinks(f,new Set([ok,space,f])),['missing.md','not here.md','resumed','visible','adjacent','unmatched','missing.md']);
 });
 test('archive contains working README example, ordered rules and discoverable skill metadata',t=>{
- const dir=scratch(t);const [{filename}]=JSON.parse(execFileSync('npm',['pack','--ignore-scripts','--json','--pack-destination',dir],{encoding:'utf8'}));execFileSync('tar',['-xzf',path.join(dir,filename),'-C',dir]);const pkg=path.join(dir,'package');assert.ok(fs.existsSync(path.join(pkg,'README.md')));inspect(path.join(pkg,'assets'));
+ const dir=scratch(t);const [{filename}]=JSON.parse(execFileSync('npm',['pack','--ignore-scripts','--json','--pack-destination',dir],{encoding:'utf8'}));execFileSync('tar',['-xzf',path.join(dir,filename),'-C',dir]);const pkg=path.join(dir,'package');inspect(path.join(pkg,'assets'));
+ const readme=path.join(pkg,'README.md');
+ const shipped=new Set(files(pkg));
+ const checkReadme=()=>assert.deepEqual(brokenLinks(readme,shipped),[],'broken archive README links');
+ checkReadme();
+ for (const file of shipped) if (file.endsWith('.md')) assert.deepEqual(brokenLinks(file,shipped),[],file);
+ fs.appendFileSync(readme,'\n[Missing from the package](missing-archive-file.md)\n');
+ assert.throws(checkReadme,/broken archive README links/);
  fs.mkdirSync(path.join(dir,'node_modules'));fs.symlinkSync(pkg,path.join(dir,'node_modules/agent-hands'),'dir');fs.symlinkSync(path.resolve('node_modules/yaml'),path.join(dir,'node_modules/yaml'),'dir');const read=f=>fs.readFileSync(f,'utf8');const example=read(path.join(pkg,'assets/README.md')).match(/```js\n([\s\S]*?)\n```/)[1];const script=put(dir,'example.mjs',example);const root=path.join(dir,'work');fs.mkdirSync(root);const state=JSON.parse(execFileSync(process.execPath,[script,root],{cwd:pkg}));assert.equal(state.target,'cursor');for(const [i,name] of ['AGENTS.md','workspace.md'].entries())assert.equal(read(path.join(root,`.agents/rules/cursor/000${i+1}.md`)),read(path.join(pkg,'assets/rules',name)));assert.equal(parseFrontmatter(read(path.join(root,'.cursor/skills/asking-questions/SKILL.md'))).name,'asking-questions');
 });
 

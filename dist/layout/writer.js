@@ -104,7 +104,7 @@ export class Writer {
     }
     copyFile({ src, rel, origin }) {
         const execAtSource = (statSync(src).mode & EXEC_BITS) !== 0;
-        this.stage(rel, readFileSync(src), { origin, mode: execAtSource ? EXEC_BITS : null });
+        this.stage(rel, readFileSync(src), { origin, mode: execAtSource ? EXEC_BITS : 0 });
     }
     async transaction(extraPaths, apply, { commitBindings, atomic } = {}) {
         const dirs = [...this.replacedDirs].map(rel => {
@@ -211,7 +211,8 @@ export class Writer {
                 }
                 if (s.diskHash === s.newHash) {
                     this.files[s.rel] = s.newHash;
-                    this.#applyMode(s);
+                    if (this.#applyMode(s))
+                        this.updated.push(s.rel);
                     continue;
                 }
                 if (s.oldHash && s.diskHash !== null && s.diskHash !== s.oldHash)
@@ -249,15 +250,16 @@ export class Writer {
         return this.prune();
     }
     #applyMode(s) {
-        if (!s.mode)
-            return;
-        try {
-            const current = statSync(s.abs).mode & 0o777;
-            chmodSync(s.abs, current | s.mode);
+        if (s.mode === null || process.platform === 'win32')
+            return false;
+        const current = statSync(s.abs).mode & 0o7777;
+        const execute = s.mode & EXEC_BITS;
+        const desired = (current & ~EXEC_BITS) | execute;
+        if (desired !== current)
+            chmodSync(s.abs, desired);
+        if (execute)
             this.execFiles.add(s.rel);
-        }
-        catch {
-        }
+        return desired !== current;
     }
     prune() {
         const removed = [];
