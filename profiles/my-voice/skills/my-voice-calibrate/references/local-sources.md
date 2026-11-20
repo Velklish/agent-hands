@@ -14,4 +14,6 @@ Cursor IDE discovery checks the standard application-data location for macOS, Li
 
 Recognized mixed interface envelopes, shell output and service instructions are excluded. Review ambiguous passages rather than trying to recover a human fragment from a mixed envelope. Identical text with different IDs is not automatically a duplicate. If both `bb` and `codex` are selected, provider identities reconcile exact one-to-one duplicates after collection; unresolved overlap is partial, not proof of a duplicate.
 
+Use `--exclude-codex-originator MARKER` with `--local codex` if your host tags additional automated threads. Repeat the option as needed. The case-insensitive substring matches the Codex originator field before messages are read from either the history API or JSONL fallback.
+
 Missing linked messages, unsupported formats and interrupted pages can leave partial evidence. A successful read covers the formats and records described here, not deleted history or every possible version. Tests use artificial inputs and mocked read APIs, not installed-account probes.

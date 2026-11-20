@@ -116,6 +116,30 @@ class SourceTests(unittest.TestCase):
         self.assertEqual('partial', report['status'])
         self.assertEqual(1, report['stats']['excluded_threads'])
 
+    def test_codex_custom_originator_exclusion_covers_api_and_fallback(self):
+        root = self.home / '.codex'
+        secret_event = {'type': 'event_msg', 'payload': {'type': 'user_message', 'message': 'Generated text'}}
+        for name, originator in [('from-file', 'ExampleDriver:v1'), ('human', 'interactive')]:
+            write_jsonl(root / 'sessions' / f'{name}.jsonl', [
+                {'type': 'session_meta', 'payload': {'id': name, 'source': 'cli', 'originator': originator}},
+                secret_event if name == 'from-file' else dict(secret_event, payload={'type': 'user_message', 'message': 'Human text'}),
+            ])
+
+        class Client:
+            def call(self, method, params):
+                if method == 'thread/list':
+                    return {'data': [] if params['archived'] else [
+                        {'id': 'from-api', 'source': 'appServer', 'originator': 'EXAMPLEDRIVER:v2'}]}
+                raise AssertionError('Excluded API thread was read')
+
+            def close(self):
+                pass
+
+        report = collect_codex(roots=[root], rpc_factory=lambda _: Client(), excluded_originators=('exampledriver',))
+        self.assertEqual('ready', report['status'])
+        self.assertEqual(2, report['stats']['excluded_threads'])
+        self.assertEqual(['Human text'], [message['text'] for message in report['messages']])
+
     def test_codex_paginated_rollout_requires_complete_retained_source(self):
         root = self.home / '.codex'
         meta = {'type': 'session_meta', 'payload': {'id': 'root', 'source': 'vscode',

@@ -65,7 +65,7 @@ class CollectTests(unittest.TestCase):
             output = Path(temporary) / 'sessions.json'
             stdout, stderr = io.StringIO(), io.StringIO()
 
-            def sessions(selected, *, since, until, workers, progress):
+            def sessions(selected, *, since, until, workers, progress, excluded_codex_originators):
                 self.assertEqual(['claude'], selected)
                 self.assertEqual(2, workers)
                 progress('claude started')
@@ -78,3 +78,13 @@ class CollectTests(unittest.TestCase):
             self.assertEqual(1, json.loads(stdout.getvalue())['sources'][0]['messages'])
             self.assertEqual('claude started\nclaude finished status=ready messages=1\n', stderr.getvalue())
             self.assertNotIn('PRIVATE TEXT', stdout.getvalue() + stderr.getvalue())
+
+    def test_cli_normalizes_explicit_codex_originators(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / 'sessions.json'
+            report = {'source': 'codex', 'status': 'absent', 'messages': []}
+            with patch('collect.collect_sources', return_value=[report]) as reader, contextlib.redirect_stdout(io.StringIO()):
+                result = main(['--local', 'codex', '--all-available', '--language', 'en', '--output', str(output),
+                               '--exclude-codex-originator', ' ExampleDriver '])
+            self.assertEqual(result, 3)
+            self.assertEqual(reader.call_args.kwargs['excluded_codex_originators'], ('exampledriver',))

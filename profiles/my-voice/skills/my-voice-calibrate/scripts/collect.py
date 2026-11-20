@@ -84,8 +84,12 @@ def source_report(name, path, since, until, *, samples):
     return result
 
 
-def collect(*, selected, samples=None, reports=(), since=None, until=None, languages, workers=3, progress=None):
-    sources = collect_sources(selected, since=since, until=until, workers=workers, progress=progress) if selected else []
+def collect(*, selected, samples=None, reports=(), since=None, until=None, languages, workers=3, progress=None,
+            excluded_codex_originators=()):
+    sources = []
+    if selected:
+        sources = collect_sources(selected, since=since, until=until, workers=workers, progress=progress,
+                                  excluded_codex_originators=excluded_codex_originators)
     for source in sources:
         for message in source['messages']:
             message.update(language=None, genre=None, purpose='agent-interaction')
@@ -117,6 +121,8 @@ def write_output(path, value):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--local', choices=LOCAL_SOURCES, action='append', default=[], help='Local source to read; repeat to select several')
+    parser.add_argument('--exclude-codex-originator', action='append', default=[], metavar='MARKER',
+                        help='Exclude a known automated Codex originator by case-insensitive substring; repeatable')
     parser.add_argument('--samples', type=Path, help='JSON array of provided samples')
     parser.add_argument('--report', action='append', default=[], metavar='NAME=PATH', help='Import a selected source report; repeatable')
     parser.add_argument('--since', help='Inclusive ISO 8601 start with timezone; requires --until')
@@ -128,6 +134,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if not (args.local or args.samples or args.report):
         parser.error('select at least one source: --local, --samples, or --report')
+    excluded = tuple(value.strip().lower() for value in args.exclude_codex_originator)
+    if excluded and ('codex' not in args.local or not all(excluded)):
+        parser.error('--exclude-codex-originator needs --local codex and a nonempty marker')
     since, until = timestamp(args.since), timestamp(args.until)
     if args.all_available:
         if args.since is not None or args.until is not None:
@@ -151,7 +160,8 @@ def main(argv=None):
         parser.error('--output already exists; select a new temporary file')
     corpus, code = collect(selected=args.local, samples=args.samples, reports=reports,
                            since=since, until=until, languages=languages, workers=args.workers,
-                           progress=lambda line: print(line, file=sys.stderr, flush=True))
+                           progress=lambda line: print(line, file=sys.stderr, flush=True),
+                           excluded_codex_originators=excluded)
     try:
         write_output(output, corpus)
     except OSError:

@@ -91,13 +91,15 @@ def pages(client, method, params):
         params = dict(params, cursor=cursor)
 
 
-def interactive_thread(thread):
+def interactive_thread(thread, excluded_originators):
     source = thread.get("source")
     automation_markers = ("automation", "subagent", "scheduled")
-    origin = f'{thread.get("threadSource")} {thread.get("originator")}'.lower()
+    originator = str(thread.get('originator') or '').lower()
+    origin = f'{thread.get("threadSource")} {originator}'.lower()
     return (source in ("cli", "vscode", "appServer")
             and not thread.get("parentThreadId")
-            and not any(word in origin for word in automation_markers))
+            and not any(word in origin for word in automation_markers)
+            and not any(word in originator for word in excluded_originators))
 
 
 def read_thread(client, root, report, thread, indexed):
@@ -125,14 +127,14 @@ def read_thread(client, root, report, thread, indexed):
     return turns
 
 
-def read_server(root, report, factory, indexed):
+def read_server(root, report, factory, indexed, excluded_originators):
     client = factory(root)
     try:
         for archived in (False, True):
             for thread in pages(client, "thread/list", {
                     "limit": 100, "archived": archived, "modelProviders": [], "useStateDbOnly": True}):
                 report.found = True
-                if not interactive_thread(thread):
+                if not interactive_thread(thread, excluded_originators):
                     indexed.add(thread["id"])
                     report.stats["excluded_threads"] += 1
                     continue
@@ -142,12 +144,12 @@ def read_server(root, report, factory, indexed):
                     indexed.add(thread["id"])
                 except READ_ERRORS:
                     report.issue("app_server_thread_read_failed", unavailable=True)
-        read_rollouts(root, report, skip_ids=indexed, client=client)
+        read_rollouts(root, report, excluded_originators, skip_ids=indexed, client=client)
     finally:
         client.close()
 
 
-def read_rollouts(root, report, skip_ids=None, client=None):
+def read_rollouts(root, report, excluded_originators, skip_ids=None, client=None):
     skip_ids = set() if skip_ids is None else skip_ids
     for directory in (root / "sessions", root / "archived_sessions"):
         for path in sorted(directory.rglob("*.jsonl")):
@@ -170,7 +172,7 @@ def read_rollouts(root, report, skip_ids=None, client=None):
                 continue
             thread = {"source": metadata.get("source"), "parentThreadId": metadata.get("parent_thread_id"),
                       "threadSource": metadata.get("thread_source"), "originator": metadata.get("originator")}
-            if not interactive_thread(thread):
+            if not interactive_thread(thread, excluded_originators):
                 report.stats["excluded_threads"] += 1
                 continue
             conversation = metadata.get("id", path.stem)
@@ -221,7 +223,7 @@ def read_rollouts(root, report, skip_ids=None, client=None):
                                 "kind": "interactive_user_candidate", "timestamp_scope": "message"})
 
 
-def collect_codex(since=None, until=None, home=None, roots=None, rpc_factory=None):
+def collect_codex(since=None, until=None, home=None, roots=None, rpc_factory=None, excluded_originators=()):
     home = Path(home or Path.home())
     if roots is None:
         roots = [home / ".codex"]
@@ -239,8 +241,8 @@ def collect_codex(since=None, until=None, home=None, roots=None, rpc_factory=Non
         try:
             if not available:
                 raise FileNotFoundError("codex executable unavailable")
-            read_server(root, report, rpc_factory or ReadOnlyAppServer, indexed)
+            read_server(root, report, rpc_factory or ReadOnlyAppServer, indexed, excluded_originators)
         except READ_ERRORS:
             report.issue("app_server_unavailable_using_local_rollouts", unavailable=True)
-            read_rollouts(root, report, skip_ids=indexed)
+            read_rollouts(root, report, excluded_originators, skip_ids=indexed)
     return report.result()
