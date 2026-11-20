@@ -1,10 +1,11 @@
 # AH-6 · Package the CLI and JavaScript API for clean installs
 
-- **Order:** 60
 - **Scope:** [Planning boundaries](../../reference/README.md#planning-boundaries)
 - **Created:** 2026-11-20
 - **Dependencies:** none
 - **Cost:** —
+- **Previous order:** 60
+- **Taken:** 2026-11-20
 
 ## Context
 
