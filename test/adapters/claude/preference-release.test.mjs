@@ -45,7 +45,9 @@ test('public hook operations report differing foreign preferences without exposi
   ]};
   assert.deepEqual(planWorkspaceHooks(input),expected);
   assert.deepEqual(applyWorkspaceHooks(input),expected);
-  assert.deepEqual(await applyPreparedWorkspaceHooks(prepareWorkspaceHooks(input),{id:'fixture',async stage(){},async finish(){}}),expected);
+  const prepared = prepareWorkspaceHooks(input);
+  assert.deepEqual(prepared.registrations,[]);
+  assert.deepEqual(await applyPreparedWorkspaceHooks(prepared,{id:'fixture',async stage(){},async finish(){}}),{...expected,registrations:[]});
   assert.deepEqual(JSON.parse(fs.readFileSync(file)),settings);
   assert.equal(fs.existsSync(path.join(root,'.agent-hands/hooks/claude/preferences.json')),false);
 });
