@@ -12,6 +12,16 @@ The plan is an in-memory value; pass the exact returned object to `applyLayout`.
 `requiredVars` names unresolved references from values, and may not be present. Supply environment
 values only when they may be written into the resulting configuration. Do not log plans that contain secrets.
 
+`resources` describes each prepared skill file, shared supporting file and subagent by logical owner.
+Match a record's `path` to `files`, and use `relativePath` within that resource rather than parsing a
+harness path. Shared files point to the corresponding `sharedDirs` input by zero-based `sourceIndex`.
+If several sources supply the same shared file with identical bytes and mode, the first source owns
+the preview record. Rules and MCP previews are not selected content resources.
+
+By default a linked or special file in a source tree is an error. An integrating caller that already
+warns and skips such supporting files can opt in with `supportingFiles: 'skip-nonregular'`. `notices`
+names each skipped resource without opening it. A selected skill still needs a regular `SKILL.md`.
+
 | Target | Skill and agent directories | Tool server document |
 |---|---|---|
 | Claude Code | `.claude/skills/`, `.claude/agents/` | `.mcp.json`, owned server keys |

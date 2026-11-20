@@ -4,12 +4,14 @@ import { fields, preparedServer, stringList, type ServerEntry } from './stdio.js
 import { copyEntries, Writer } from './writer.js';
 import { sha256, toPosix } from './fs.js';
 import { SHARED_DIR, validateSkill } from './skills.js';
-import { stageContent } from './content.js';
+import { stageContent, type ResourceOwner } from './content.js';
 import { readRules } from './rule-files.js';
 import { mergeMcpServers, object, renderMcpJson, resolveEnvironment, sameServerConfig, serverHash, valueEnvironmentNames, writeToolRecord } from './mcp.js';
 import { isTarget, type LayoutAdapter, type Target, type McpDocument } from './adapter.js';
 
 export interface LayoutFile { path: string; content: string | Uint8Array; executable?: boolean }
+export type LayoutResource = { path: string; relativePath: string; owner: ResourceOwner };
+export type LayoutNotice = { code: 'skipped-supporting-file'; resource: LayoutResource; symbolic: boolean };
 export interface LayoutInput {
   root: string;
   target: Target;
@@ -19,10 +21,12 @@ export interface LayoutInput {
   servers: readonly ServerEntry[];
   rules: readonly string[];
   env?: Readonly<Record<string, string>>;
+  supportingFiles?: 'strict' | 'skip-nonregular';
   writeTools?: Readonly<Record<string, { source: string; write: readonly string[] }>>;
 }
 const planBrand: unique symbol = Symbol('layout plan');
 export interface LayoutPlan { readonly [planBrand]: true; root: string; files: readonly LayoutFile[]; rules?: readonly string[];
+  resources: readonly LayoutResource[]; notices: readonly LayoutNotice[];
   requiredVars?: readonly string[]; writeTools?: readonly { server: string; tool: string }[] }
 export interface LayoutState { target?: Target; files: Record<string, string>; serverKeys?: Record<string, Record<string, string>>; createdMcp?: string[] }
 export interface LayoutResult { state: LayoutState; written: string[]; updated: string[]; removed: string[] }
@@ -62,10 +66,12 @@ function sourceLabel(value: unknown) {
 }
 
 export function prepare(value: unknown, select: (target: unknown) => LayoutAdapter): LayoutPlan {
-  const input = fields(value, 'layout', ['root', 'target', 'skills', 'sharedDirs', 'servers', 'subagents', 'rules', 'env', 'writeTools']);
+  const input = fields(value, 'layout', ['root', 'target', 'skills', 'sharedDirs', 'servers', 'subagents', 'rules', 'env', 'writeTools', 'supportingFiles']);
   const { root } = input;
   if (typeof root !== 'string' || !path.isAbsolute(root)) throw new TypeError('Expected an absolute workspace root');
   const adapter = select(input.target);
+  const supportingFiles = input.supportingFiles ?? 'strict';
+  if (supportingFiles !== 'strict' && supportingFiles !== 'skip-nonregular') throw new TypeError('Unknown supporting file policy');
   const skillNames = new Set([SHARED_DIR]);
   const skills = list(input, 'skills').map(entry => {
     const raw = fields(entry, 'skill', ['name', 'dirAbs', 'source']);
@@ -112,6 +118,12 @@ export function prepare(value: unknown, select: (target: unknown) => LayoutAdapt
   const hashes = new Map<string, string>();
   const origins = new Map<string, string>();
   const sources: (() => void)[] = [];
+  const resources = new Map<string, LayoutResource>();
+  const notices: LayoutNotice[] = [];
+  const remember = (rel: string, relativePath: string, owner: ResourceOwner) => {
+    const output = toPosix(rel);
+    if (!resources.has(output)) resources.set(output, { path: output, relativePath: toPosix(relativePath), owner });
+  };
   const stage = (rel: string, content: string | Uint8Array, executable = false, origin = rel) => {
     const key = toPosix(rel).toLowerCase();
     const digest = sha256(content);
@@ -123,14 +135,20 @@ export function prepare(value: unknown, select: (target: unknown) => LayoutAdapt
     hashes.set(key, digest);
     origins.set(key, origin);
   };
-  stageContent({ stage: (rel, content) => stage(rel, content), copyDir(src, dest, options) {
-    const scan = () => [...copyEntries(directory(src), dest, { regularOnly: true })].sort((a, b) => a.rel.localeCompare(b.rel))
+  stageContent({ stage: (rel, content, owner) => { stage(rel, content); remember(rel, path.basename(rel), owner); }, copyDir(src, dest, owner, origin) {
+    const scan = (initial = false) => [...copyEntries(directory(src), dest, { regularOnly: supportingFiles === 'strict', skipped: entry => {
+      if (initial) notices.push({ code: 'skipped-supporting-file', symbolic: entry.symbolic,
+        resource: { path: toPosix(entry.rel), relativePath: toPosix(path.relative(dest, entry.rel)), owner } });
+    } })].sort((a, b) => a.rel.localeCompare(b.rel))
       .map(({ src: file, rel }) => ({ rel, content: readFileSync(file), executable: (lstatSync(file).mode & 0o111) !== 0 }));
     const fingerprint = (files: ReturnType<typeof scan>) => JSON.stringify(files.map(({ rel, content, executable }) => [rel, sha256(content), executable]));
-    const files = scan();
+    const files = scan(true);
     const hash = fingerprint(files);
     sources.push(() => { if (fingerprint(scan()) !== hash) throw new Error(`Stale source: ${src}`); });
-    for (const file of files) stage(file.rel, file.content, file.executable, options?.origin ?? src);
+    for (const file of files) {
+      stage(file.rel, file.content, file.executable, origin ?? src);
+      remember(file.rel, path.relative(dest, file.rel), owner);
+    }
   } }, adapter, { skills, sharedDirs, subagents });
   for (const [index, rule] of rules.entries()) {
     const digest = sha256(rule.content);
@@ -145,6 +163,7 @@ export function prepare(value: unknown, select: (target: unknown) => LayoutAdapt
   const { file, document } = adapter.renderMcp(resolved);
   const files = [...entries.values(), ...(Object.keys(resolved).length ? [file] : [])];
   const result: LayoutPlan = { [planBrand]: true, root, files: files.map(f => ({ ...f, content: typeof f.content === 'string' ? f.content : Buffer.from(f.content) })),
+    resources: [...resources.values()], notices,
     ...(rules.length ? { rules: rules.map(row => row.file) } : {}), ...(requiredVars.length ? { requiredVars } : {}), ...(writeTools ? { writeTools } : {}) };
   applications.set(result, { adapter, root, entries: files, mcp: document, checkSources: () => { for (const check of sources) check(); } });
   return result;

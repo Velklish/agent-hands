@@ -1,10 +1,21 @@
 import { type ServerEntry } from './stdio.js';
+import { type ResourceOwner } from './content.js';
 import { type LayoutAdapter, type Target } from './adapter.js';
 export interface LayoutFile {
     path: string;
     content: string | Uint8Array;
     executable?: boolean;
 }
+export type LayoutResource = {
+    path: string;
+    relativePath: string;
+    owner: ResourceOwner;
+};
+export type LayoutNotice = {
+    code: 'skipped-supporting-file';
+    resource: LayoutResource;
+    symbolic: boolean;
+};
 export interface LayoutInput {
     root: string;
     target: Target;
@@ -29,6 +40,7 @@ export interface LayoutInput {
     servers: readonly ServerEntry[];
     rules: readonly string[];
     env?: Readonly<Record<string, string>>;
+    supportingFiles?: 'strict' | 'skip-nonregular';
     writeTools?: Readonly<Record<string, {
         source: string;
         write: readonly string[];
@@ -40,6 +52,8 @@ export interface LayoutPlan {
     root: string;
     files: readonly LayoutFile[];
     rules?: readonly string[];
+    resources: readonly LayoutResource[];
+    notices: readonly LayoutNotice[];
     requiredVars?: readonly string[];
     writeTools?: readonly {
         server: string;
