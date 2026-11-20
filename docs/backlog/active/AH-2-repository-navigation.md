@@ -1,10 +1,11 @@
 # AH-2 · Locate and inspect workspace repositories
 
-- **Order:** 20
 - **Scope:** [Planning boundaries](../../reference/README.md#planning-boundaries)
 - **Created:** 2026-11-20
 - **Dependencies:** none
 - **Cost:** —
+- **Previous order:** 20
+- **Taken:** 2026-11-20
 
 ## Context
 
