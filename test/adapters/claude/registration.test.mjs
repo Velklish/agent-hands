@@ -41,6 +41,9 @@ const macSettings = { enableAllProjectMcpServers:true,skillOverrides:{ fixture:'
   SessionStart:[group('startup|resume',4)],Stop:[group(null)],PreToolUse:[group('Write',4),group(question,30)],PostToolUse:[group('mcp__sample_tools__(read_one|write_two)'),group(question,30)],PostToolUseFailure:[group(question,30)],
 } };
 const macAccepts = registrationPostcondition(mac,JSON.stringify(macSettings));
+for (const step of ['add','install']) assert.throws(()=>registrationPostcondition({...request,step},JSON.stringify(macSettings)),/project settings/);
+assert.ok(registrationPostcondition({...request,step:'update'},JSON.stringify(macSettings))(JSON.stringify(macSettings)));
+assert.throws(()=>registrationPostcondition({...request,step:'update'},JSON.stringify({...macSettings,env:{FIXTURE:'keep'}})),/project settings/);
 assert.ok(macAccepts(JSON.stringify({ ...macSettings,enabledPlugins:{ ...macSettings.enabledPlugins,'subject@market':true } })));
 assert.throws(() => registrationPostcondition({ ...mac,binarySha256:request.binarySha256 },JSON.stringify(macSettings)),/binary/);
 for (const mod of [

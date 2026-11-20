@@ -48,7 +48,7 @@ export function plugin(root, settings, input) {
     if (prior?.fingerprint === fingerprint && current.version === version)
         return { changes, steps, checkSource };
     const binary = realpathSync(input.executable), binarySha256 = sha256(readFileSync(binary));
-    const request = { binarySha256, version: '2.1.311 (Claude Code)', platform: process.platform, arch: process.arch, marketplace, plugin, directory, step: 'install' };
+    const request = { binarySha256, version: '2.1.311 (Claude Code)', platform: process.platform, arch: process.arch, marketplace, plugin, directory, step: current.installed ? 'update' : 'install' };
     registrationPreflight(request, root, before);
     for (const step of [...(current.marketplace ? [] : ['add']), current.installed ? 'update' : 'install']) {
         const config = { ...request, step }, protectedFiles = [settings.file, ...files.slice(0, 2)];

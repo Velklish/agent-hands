@@ -36,13 +36,13 @@ function group(value: unknown, event: string, mac: boolean) {
     (event === 'PostToolUse' && pairedTools.test(value.matcher)))));
 }
 
-function readSettings(text: string, platform: string): Fields {
+function readSettings(text: string, {platform,step}: RegistrationRequest): Fields {
   let doc: unknown;
   try { doc = JSON.parse(text); } catch { throw new Error('Unsupported project settings'); }
   // Reject duplicate members and lossy numeric conversions before trusting parsed values.
   const tokens = text.match(/"(?:\\.|[^"\\])*"|[^\s]/gs)?.join('');
   const registrationOnly = platform === 'darwin' && record(doc) && keys(doc,['enabledPlugins','extraKnownMarketplaces']);
-  const projected = (platform === 'darwin' && !registrationOnly) || (record(doc) && Object.hasOwn(doc,'enableAllProjectMcpServers'));
+  const projected = (platform === 'darwin' && !registrationOnly) || (platform === 'linux' && step === 'update' && record(doc) && Object.hasOwn(doc,'enableAllProjectMcpServers'));
   if (JSON.stringify(doc) !== tokens || !record(doc) || !keys(doc,registrationOnly ? ['enabledPlugins','extraKnownMarketplaces'] : projected ? macKeys : linuxKeys)
     || (projected && (!macKeys.every(k => Object.hasOwn(doc,k)) || doc.enableAllProjectMcpServers !== true || !dictionary(doc.skillOverrides,(k,v) => name(k) && v === 'off')))
     || ('hooks' in doc && !dictionary(doc.hooks,(k,v) => (projected ? Object.hasOwn(macMatchers,k) : k === 'PreToolUse') && Array.isArray(v) && v.every(row => group(row,k,projected))))
@@ -57,7 +57,7 @@ export function registrationPostcondition(request: RegistrationRequest, before: 
     : request.platform === 'darwin' ? '85d8c08707fcfd1e78ffa0204eefbc6ec9e4fe22f375fb2767ef85d957ed3161' : null;
   if (binary === null || request.binarySha256 !== binary || request.version !== '2.1.311 (Claude Code)' || request.arch !== 'arm64') throw new Error('Unsupported registration binary');
   if (!name(request.marketplace) || !name(request.plugin) || !request.directory.startsWith('/') || !['add','install','update'].includes(request.step)) throw new Error('Unsupported registration request');
-  const expected = readSettings(before,request.platform);
+  const expected = readSettings(before,request);
   const known = expected.extraKnownMarketplaces as Fields | undefined;
   const desired = { source: { source: 'directory', path: request.directory } };
   if (known && Object.hasOwn(known,request.marketplace) && !isDeepStrictEqual(known[request.marketplace],desired)) throw new Error('Conflicting marketplace source');
@@ -69,7 +69,7 @@ export function registrationPostcondition(request: RegistrationRequest, before: 
   return after => {
     try {
       if (after === null) return false;
-      const actual = readSettings(after,request.platform);
+      const actual = readSettings(after,request);
       if (request.step === 'add' && !Object.hasOwn(expected,'enabledPlugins') && isDeepStrictEqual(actual.enabledPlugins,{})) delete actual.enabledPlugins;
       return isDeepStrictEqual(actual, expected);
     }
@@ -88,8 +88,8 @@ export function registrationUnchanged(request: RegistrationRequest, before: Regi
   if (before.settings === after.settings) return true;
   if (before.settings === null || after.settings === null) return false;
   try {
-    const expected = readSettings(before.settings,request.platform);
-    const current = readSettings(after.settings,request.platform);
+    const expected = readSettings(before.settings,request);
+    const current = readSettings(after.settings,request);
     if (!Object.hasOwn(expected,'enabledPlugins') && isDeepStrictEqual(current.enabledPlugins,{})) delete current.enabledPlugins;
     return isDeepStrictEqual(expected,current);
   }

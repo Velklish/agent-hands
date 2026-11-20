@@ -41,7 +41,7 @@ export function plugin(root:string,settings:TargetChange,input:WorkspaceRegistra
   const steps: ExternalHookChange[] = [];
   if (prior?.fingerprint === fingerprint && current.version === version) return {changes,steps,checkSource};
   const binary = realpathSync(input.executable), binarySha256 = sha256(readFileSync(binary));
-  const request: RegistrationRequest = {binarySha256,version:'2.1.311 (Claude Code)',platform:process.platform,arch:process.arch,marketplace,plugin,directory,step:'install'};
+  const request: RegistrationRequest = {binarySha256,version:'2.1.311 (Claude Code)',platform:process.platform,arch:process.arch,marketplace,plugin,directory,step:current.installed?'update':'install'};
   registrationPreflight(request,root,before);
   for (const step of [...(current.marketplace ? [] : ['add'] as const),current.installed ? 'update' as const : 'install' as const]) {
     const config = {...request,step}, protectedFiles = [settings.file,...files.slice(0,2)];
