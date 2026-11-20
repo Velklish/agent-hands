@@ -25,3 +25,9 @@ Worker boundaries: change only the assigned branch or worktree; create new findi
 
 **Talking to the owner.** A message to the owner — a question, a status, a run report — is read without the queue, the run or your context open. A question is answered from its own text: it says what is asked, why, and what each answer changes, so the owner decides rather than presses the recommended option. Use no term or abbreviation you coined yourself (a worker slug, “piece”, a review code such as F1); a definition new to the owner is used only after they confirm it. Name a task by its number and its title, `AH-N — <title>`, never by the number alone: the title goes at the first mention in a message, in every heading and in every table row; later mentions in the same paragraph may use the number alone; each list item counts as a paragraph.
 <!-- backslop:end -->
+
+## Harness adapters
+
+Keep each supported harness in its own module. An adapter may use shared tools and typed contracts. Keep native formats, paths, diagnostics and regression fixtures with the adapter that owns them. A change specific to one harness must work without loading or modifying the other adapters.
+
+Test shared behavior once through the common interfaces for each applicable adapter. Test native behavior in the individual adapter suite. When adding an adapter or changing its boundary, verify that it runs independently and preserves the other harnesses' output and ownership data.
