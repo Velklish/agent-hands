@@ -112,18 +112,40 @@ test('clone retains the address passed by the caller and redacts authentication 
   assert.equal(gitError({ status: 128, stderr: 'fatal: ordinary failure\n' }), 'fatal: ordinary failure');
 });
 
-test('ordinary and pinned clone have a kill deadline longer by default than a network probe', posix, (t) => {
+test('ordinary and pinned clone report a timeout and clean up after an unfinished Git process', (t) => {
   const root = fixture(t);
   assert.ok(GIT_CLONE_TIMEOUT_MS > GIT_NET_TIMEOUT_MS);
-  const stub = stubGit(t, root, `process.on('SIGTERM', () => {}); await new Promise((resolve) => setTimeout(resolve, 60_000));`);
+  const stub = stubGit(t, root, `await new Promise((resolve) => setTimeout(resolve, 60_000));`);
   const dest = path.join(root, 'clone');
   const start = Date.now();
-  for (const result of [gitClone('source', dest, { timeoutMs: 400 }), gitCloneSha('source', dest, '1'.repeat(40), { timeoutMs: 400 })]) {
-    assert.deepEqual(result, { ok: false, reason: 'timeout', err: 'Git clone timed out after 0.4 s' });
+  const timeoutMs = 1500;
+  for (const result of [gitClone('source', dest, { timeoutMs }), gitCloneSha('source', dest, '1'.repeat(40), { timeoutMs })]) {
+    assert.deepEqual(result, { ok: false, reason: 'timeout', err: 'Git clone timed out after 1.5 s' });
   }
   assert.deepEqual(stub.calls().map(({ cmd }) => cmd), ['clone', 'init']);
   assert.equal(existsSync(dest), false);
   assert.ok(Date.now() - start < 10_000);
   assert.equal(timedOut({ status: null, error: { code: 'ETIMEDOUT' } }), true);
   assert.equal(timedOut({ status: 128 }), false);
+});
+
+test('the requested Git launcher is witnessed inside the actual child', (t) => {
+  const root = fixture(t);
+  const expected = process.platform === 'win32' || process.env.FIXTURE_NODE_GIT_LAUNCHER === '1' ? 'node' : 'path';
+  const stub = stubGit(t, root, `if (cmd === '--version') { console.log('fixture'); process.exit(0); }`);
+  assert.equal(git(root, '--version'), 'fixture');
+  assert.deepEqual(stub.calls().map(({ launcher }) => launcher), [expected]);
+});
+
+test('clone kills a Git process that ignores SIGTERM', posix, (t) => {
+  const root = fixture(t);
+  const handlerReady = path.join(root, 'handler-ready');
+  stubGit(t, root, `
+    const { writeFileSync } = await import('node:fs');
+    process.on('SIGTERM', () => {});
+    writeFileSync(${JSON.stringify(handlerReady)}, 'ready');
+    await new Promise((resolve) => setTimeout(resolve, 60_000));
+  `);
+  assert.equal(gitClone('source', path.join(root, 'clone'), { timeoutMs: 1500 }).reason, 'timeout');
+  assert.equal(existsSync(handlerReady), true);
 });

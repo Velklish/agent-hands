@@ -163,20 +163,39 @@ test('namespace resolution wins over a sibling directory and does not hide rejec
   for (const input of ['project', 'team/project', 'repos/team/project']) assert.equal(isDiskPath(input), false);
 });
 
-test('a valid disk path from a nested cwd survives an invalid namespace reading', async (t) => {
+test('a nested cwd preserves namespace priority, valid disk fallback and zone boundaries', async (t) => {
   const root = fixture(t);
   const first = seed(path.join(root, 'repos/team/first'));
   const second = seed(path.join(root, 'repos/team/second'));
+  const tool = seed(path.join(root, 'external/tool'));
+  const fallback = seed(path.join(first, 'repos/decoy'));
+  const reserved = seed(path.join(root, 'repos/external/tool'));
+  const staleDecoy = path.join(first, 'external/tool');
   mkdirSync(path.join(first, 'nested'));
   const settings = options(root, first);
-  const target = 'nested/../../second';
   const run = command(runRepositoryCommand, settings);
-  assert.deepEqual(await run('path', target), { exit: 0, out: [second], err: [] });
   const nav = createNavigation(settings);
-  const resolved = await nav.resolve(target);
-  assert.equal(resolved.source, 'disk');
-  assert.equal(resolved.abs, second);
-  assert.equal((await nav.repoPath(target)).abs, second);
+  const cases = [
+    ['external/tool', tool, 'namespace'],
+    ['nested/../../second', second, 'disk'],
+    ['external/../repos/decoy', null, null],
+    [path.relative(first, reserved), null, null],
+  ];
+  assert.equal(existsSync(staleDecoy), false);
+  assert.ok(existsSync(fallback));
+  for (const [target, abs, source] of cases) {
+    const result = await run('path', target);
+    if (abs) {
+      assert.deepEqual(result, { exit: 0, out: [abs], err: [] }, target);
+      assert.equal((await nav.resolve(target)).source, source, target);
+    } else {
+      assert.deepEqual([result.exit, result.out], [1, []], target);
+      assert.match(result.err[0], /reserved/);
+    }
+  }
+  seed(staleDecoy);
+  assert.deepEqual(await run('path', 'external/tool'), { exit: 0, out: [tool], err: [] });
+  assert.match((await run('path', 'external/missing')).err[0], /Repository is not cloned/);
 });
 
 test('lookup is read-only by default; an explicit update changes tracking refs', async (t) => {

@@ -103,9 +103,10 @@ export function createNavigation({ root: explicitRoot, cwd = process.cwd(), rout
     if (target.includes('/') || (path.sep === '\\' && target.includes('\\'))) {
       const nsPath = normalizeNs(root, target);
       const firstSegment = target.split(path.sep === '\\' ? /[\\/]/ : '/')[0];
-      const crossesExternal = firstSegment === EXTERNAL_ZONE && disk.nsPath !== null && zoneOfNs(disk.nsPath) !== EXTERNAL_ZONE;
-      if (disk.reserved || crossesExternal) throw new NavigationError(`Unsafe or reserved repository namespace: ${target}`);
+      const crossesExternal = disk.exists && firstSegment === EXTERNAL_ZONE && disk.nsPath !== null && zoneOfNs(disk.nsPath) !== EXTERNAL_ZONE;
+      if (disk.reserved) throw new NavigationError(`Unsafe or reserved repository namespace: ${target}`);
       if (nsPath && isCloneDir(repoAbsPath(root, nsPath))) return fromNs(nsPath, 'namespace');
+      if (crossesExternal) throw new NavigationError(`Unsafe or reserved repository namespace: ${target}`);
       if (disk.exists && disk.nsPath) return diskResult();
       if (!nsPath) throw new NavigationError(`Unsafe or reserved repository namespace: ${target}`);
       const candidate = fromNs(nsPath, 'namespace');

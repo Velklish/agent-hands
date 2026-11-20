@@ -30,8 +30,16 @@ const probes = [
     find: 'const top = gitToplevel(abs);\n        if (!top || isEnclosingRepo', replace: 'const top = gitToplevel(abs) ?? abs;\n        if (!top || isEnclosingRepo' },
   { name: 'ambiguous origin', module: 'navigation', file: 'navigation', target: 'unreadable, missing, competing and multiple origin',
     find: "throw new OriginError('ambiguous', abs);", replace: 'origins.splice(0, origins.length - 1);' },
-  { name: 'disk fallback', module: 'navigation', file: 'navigation', target: 'a valid disk path from a nested cwd',
+  { name: 'disk fallback', module: 'navigation', file: 'navigation', target: 'a nested cwd preserves namespace priority',
     find: 'if (disk.exists && disk.nsPath)\n                return diskResult();', replace: 'if (nsPath && disk.exists && disk.nsPath)\n                return diskResult();' },
+  { name: 'namespace priority', module: 'navigation', file: 'navigation', target: 'a nested cwd preserves namespace priority',
+    find: /(if \(nsPath && isCloneDir\(repoAbsPath\(root, nsPath\)\)\)\s+return fromNs\(nsPath, 'namespace'\);)\s+(if \(crossesExternal\)\s+throw new NavigationError\([^\n]+;)/,
+    replace: '$2\n            $1' },
+  { name: 'cross-zone fallback', module: 'navigation', file: 'navigation', target: 'a nested cwd preserves namespace priority',
+    find: /if \(crossesExternal\)\s+throw new NavigationError\([^\n]+;/, replace: '' },
+  { name: 'launcher environment isolation', fixture: 'fixture', file: 'process', target: 'the requested Git launcher is witnessed',
+    env: { FIXTURE_NODE_GIT_LAUNCHER: '1', GIT_FIXTURE_NODE_LAUNCHER: '1' },
+    find: "process.platform === 'win32' || process.env.FIXTURE_NODE_GIT_LAUNCHER === '1';", replace: "process.platform === 'win32' || process.env.GIT_FIXTURE_NODE_LAUNCHER === '1';" },
   { name: 'index writes in zone scan', module: 'state', file: 'state', target: 'zone scan leaves stale index stat data untouched',
     find: "git(abs, labels, '--no-optional-locks', 'status'", replace: "git(abs, labels, 'status'" },
   { name: 'excluded build directories', module: 'layout', file: 'layout', target: 'discovery finds deep and flat clones',
@@ -40,7 +48,7 @@ const probes = [
 
 function verify(probe, expected) {
   const args = ['--test', '--test-reporter=tap', `--test-name-pattern=${probe.target}`, `test/git/${probe.file}.test.mjs`];
-  const result = spawnSync(process.execPath, args, { cwd: sandbox, encoding: 'utf8', timeout: 90_000, killSignal: 'SIGKILL' });
+  const result = spawnSync(process.execPath, args, { cwd: sandbox, env: { ...process.env, ...probe.env }, encoding: 'utf8', timeout: 90_000, killSignal: 'SIGKILL' });
   assert.equal(result.status, expected, `${probe.name}: ${result.stdout}\n${result.stderr}\n${result.error ?? ''}`);
   assert.match(result.stdout, /^# tests 1$/m);
   assert.match(result.stdout, /^# skipped 0$/m);
@@ -61,7 +69,11 @@ try {
       console.log(`${probe.name}: skipped (requires a symlink fixture)`);
       continue;
     }
-    const file = path.join(sandbox, 'dist/git', `${probe.module}.js`);
+    if (process.platform === 'win32' && probe.fixture) {
+      console.log(`${probe.name}: skipped (Windows always uses the Node launcher)`);
+      continue;
+    }
+    const file = probe.fixture ? path.join(sandbox, 'test/git', `${probe.fixture}.mjs`) : path.join(sandbox, 'dist/git', `${probe.module}.js`);
     const original = readFileSync(file, 'utf8');
     assert.equal(original.split(probe.find).length, 2, `${probe.name}: expected one mutation site`);
     writeFileSync(file, original.replace(probe.find, probe.replace));

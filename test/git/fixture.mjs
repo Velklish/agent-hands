@@ -61,12 +61,12 @@ export function stubGit(t, base, body) {
   const dir = path.join(base, 'stub');
   const log = path.join(base, 'git.jsonl');
   mkdirSync(dir);
-  const launcher = process.platform === 'win32' || process.env.GIT_FIXTURE_NODE_LAUNCHER === '1';
+  const launcher = process.platform === 'win32' || process.env.FIXTURE_NODE_GIT_LAUNCHER === '1';
   const script = path.join(dir, 'git.mjs');
   writeFileSync(script, `
     import { appendFileSync } from 'node:fs';
     import { spawnSync } from 'node:child_process';
-    const argv = process.argv.slice(2);
+    const [launcher, ...argv] = process.argv.slice(2);
     const args = [...argv];
     let cwd = '';
     while (['-C', '-c', '--no-optional-locks'].includes(args[0])) {
@@ -75,7 +75,7 @@ export function stubGit(t, base, body) {
       if (opt === '-c') args.shift();
     }
     const cmd = args[0];
-    appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv, args, cmd, cwd }) + '\\n');
+    appendFileSync(${JSON.stringify(log)}, JSON.stringify({ launcher, argv, args, cmd, cwd }) + '\\n');
     const cwdEndsWith = (name) => cwd.replaceAll('\\\\', '/').endsWith('/' + name);
     const real = () => {
       const result = spawnSync('git', argv, { env: { ...process.env, PATH: ${JSON.stringify(process.env.PATH)} }, stdio: 'inherit' });
@@ -89,7 +89,7 @@ export function stubGit(t, base, body) {
     // the executable at the test boundary so argv, options and real child exits survive.
     const { spawnSync: sync, execFile: async } = childProcess;
     const redirect = (run) => (exe, args, ...rest) => exe === 'git'
-      ? run(process.execPath, [script, ...args], ...rest) : run(exe, args, ...rest);
+      ? run(process.execPath, [script, 'node', ...args], ...rest) : run(exe, args, ...rest);
     childProcess.spawnSync = redirect(sync);
     childProcess.execFile = redirect(async);
     syncBuiltinESMExports();
@@ -100,14 +100,20 @@ export function stubGit(t, base, body) {
     });
   } else {
     const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
-    writeFileSync(path.join(dir, 'git'), `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(script)} "$@"\n`, { mode: 0o755 });
+    writeFileSync(path.join(dir, 'git'), `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(script)} path "$@"\n`, { mode: 0o755 });
     const previous = process.env.PATH;
     process.env.PATH = `${dir}${path.delimiter}${previous}`;
     t.after(() => { process.env.PATH = previous; });
   }
   return {
     calls: () => {
-      try { return readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse); }
+      try {
+        const calls = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
+        if (process.env.FIXTURE_NODE_GIT_LAUNCHER === '1' || process.platform === 'win32') {
+          assert.ok(calls.every((call) => call.launcher === 'node'), 'expected the Node Git launcher');
+        }
+        return calls;
+      }
       catch (error) { if (error.code === 'ENOENT') return []; throw error; }
     },
     reset: () => rmSync(log, { force: true }),
