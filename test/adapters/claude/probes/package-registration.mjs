@@ -7,11 +7,15 @@ import cp from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import { applyWorkspaceHooks,applyPreparedWorkspaceHooks,inspectWorkspaceHookOperation,planWorkspaceHooks,prepareWorkspaceHooks } from 'agent-hands';
 
-const [base,executable,encoded] = process.argv.slice(2), binary=fs.realpathSync(executable), prefix = JSON.parse(encoded), mac=process.platform==='darwin';
+const [base,executable,encoded,mode] = process.argv.slice(2), binary=fs.realpathSync(executable), prefix = JSON.parse(encoded), mac=process.platform==='darwin';
 assert.ok(mac ? prefix[0] === '/usr/bin/sandbox-exec' : process.platform === 'linux' && process.getuid() !== 0 && fs.existsSync('/.dockerenv') && prefix.length === 0);
-const root = path.join(base,'package-project'), home = path.join(base,'package-home'), directory = path.join(root,'market');
+const suffix = mode === 'alias' ? '-alias' : '';
+const root = path.join(base,'package-project'+suffix), home = path.join(base,'package-home'+suffix), directory = path.join(root,'market');
 const write = (f,v) => { fs.mkdirSync(path.dirname(f),{recursive:true}); fs.writeFileSync(f,JSON.stringify(v)); };
 fs.mkdirSync(home); fs.mkdirSync(root);
+const oldBundle = path.join(home,'store','initial'), newBundle = path.join(home,'store','updated');
+const link = target => {if(fs.existsSync(directory)) fs.unlinkSync(directory);fs.symlinkSync(target,directory,'dir');};
+if (suffix) { fs.mkdirSync(oldBundle,{recursive:true});link(oldBundle); }
 const source = path.join(directory,'subject/.claude-plugin/plugin.json');
 const settingsFile = path.join(root,'.claude/settings.json');
 const foreign = {hooks:[{type:'command',command:'printf neighbor'}]};
@@ -28,6 +32,7 @@ cp.spawnSync = (bin,args,options) => {
 };
 syncBuiltinESMExports();
 const registration = {marketplace:'fixture-package',plugin:'subject',directory,version:'1.0.0',fingerprint:'a'.repeat(64),executable:binary,accountHome:home};
+if (suffix) registration.expectedPhysicalDirectory = oldBundle;
 const input = {root,target:'claude',enabled:true,preferences:{enableProjectServers:true,disabledSkills:['example']},hooks:[
   {owner:'fixture',event:'SessionStart',matcher:'startup|resume',command:'printf fixture',timeout:4},
   {owner:'stop',event:'Stop',command:'printf end'},
@@ -39,7 +44,7 @@ const bad = structuredClone(initial); if(mac) bad.hooks.PostToolUse[1].matcher =
 write(settingsFile,bad);
 assert.throws(() => applyWorkspaceHooks(input),/Unsupported project settings/);
 assert.equal(calls.length,0); assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile)),bad);
-assert.equal(fs.existsSync(path.join(root,'.agent-hands')),false); assert.deepEqual(fs.readdirSync(home),[]);
+assert.equal(fs.existsSync(path.join(root,'.agent-hands')),false); assert.deepEqual(fs.readdirSync(home),suffix?['store']:[]);
 write(settingsFile,initial);
 assert.equal(planWorkspaceHooks(input).changed,true); assert.equal(calls.length,0);
 const beforeInstall = fs.readFileSync(settingsFile);
@@ -67,12 +72,20 @@ const manifest = path.join(root,'layout-manifest'), undo = path.join(root,'peer-
 write(manifest,{version:'1.0.0'});
 const saved = [settingsFile,registry,path.join(root,'.agent-hands/hooks/claude/registration.json'),path.join(root,'.agent-hands/hooks/claude/ownership.json'),path.join(root,'.agent-hands/hooks/claude/preferences.json'),manifest,source].map(file=>[file,fs.readFileSync(file)]);
 const update = {...input,preferences:{...input.preferences,disabledSkills:['example','second']},registration:{...registration,version:'1.0.1',fingerprint:'b'.repeat(64)}};
+if (suffix) {
+  fs.cpSync(oldBundle,newBundle,{recursive:true}); update.registration.expectedPhysicalDirectory=newBundle;
+  write(path.join(newBundle,'subject/.claude-plugin/plugin.json'),{name:'subject',version:'1.0.1'});
+  const n=calls.length;
+  assert.throws(()=>applyWorkspaceHooks({...input,registration:{...registration,expectedPhysicalDirectory:newBundle}}),/source changed/);
+  await assert.rejects(applyPreparedWorkspaceHooks(prepareWorkspaceHooks(update),{id:'wrong-binding',async stage(){},async finish(_,d){assert.equal(d,'rollback');}}),/source changed/);
+  assert.equal(calls.length,n);
+}
 let fail = true;
-const peer = {id:'payload-writer',async stage(id){write(undo,{id,payload:fs.readFileSync(source,'utf8'),manifest:fs.readFileSync(manifest,'utf8')});write(source,{name:'subject',version:'1.0.1'});},async beforeCommit(){
+const peer = {id:'payload-writer',async stage(id){write(undo,{id,payload:fs.readFileSync(source,'utf8'),manifest:fs.readFileSync(manifest,'utf8')});if(suffix) link(newBundle);else write(source,{name:'subject',version:'1.0.1'});},async beforeCommit(){
   assert.deepEqual(selected().map(r=>r.version),['1.0.1']);
   assert.equal(JSON.parse(fs.readFileSync(settingsFile)).skillOverrides.second,'off');
   if(fail) throw new Error('Layout manifest not saved');write(manifest,{version:'1.0.1'});
-},async finish(id,decision){const old=JSON.parse(fs.readFileSync(undo));assert.equal(old.id,id);if(decision==='rollback'){fs.writeFileSync(source,old.payload);fs.writeFileSync(manifest,old.manifest);}fs.unlinkSync(undo);}};
+},async finish(id,decision){const old=JSON.parse(fs.readFileSync(undo));assert.equal(old.id,id);if(decision==='rollback'){if(suffix) link(oldBundle);else fs.writeFileSync(source,old.payload);fs.writeFileSync(manifest,old.manifest);}fs.unlinkSync(undo);}};
 await assert.rejects(applyPreparedWorkspaceHooks(prepareWorkspaceHooks(update),peer),/Layout manifest not saved/);
 for(const [file,bytes] of saved) assert.deepEqual(fs.readFileSync(file),bytes,file);
 assert.deepEqual(selected().map(r=>[r.projectPath,r.version]),[[root,'1.0.0']]);
@@ -83,13 +96,13 @@ const settingsBefore = fs.readFileSync(settingsFile), installedBefore = fs.readF
 const receiptFile = path.join(root,'.agent-hands/hooks/claude/registration.json');
 const priorReceipt = fs.readFileSync(receiptFile);
 fs.unlinkSync(receiptFile);
-const legacy = {version:'1.0.1',fingerprint:'b'.repeat(64)}, updated = {...registration,...legacy};
+const legacy = {version:'1.0.1',fingerprint:'b'.repeat(64)}, updated = {...update.registration,...legacy};
 assert.throws(() => applyWorkspaceHooks({...input,registration:{...updated,legacy:{...legacy,version:'0.0.1'}}}),/Unconfirmed/);
 const beforeImport = calls.length;
 assert.equal(applyWorkspaceHooks({...update,registration:{...updated,legacy}}).changed,true);
 assert.equal(calls.length,beforeImport);assert.deepEqual(fs.readFileSync(receiptFile),priorReceipt);
 fs.renameSync(path.dirname(path.dirname(source)),path.join(directory,'absent'));
-assert.throws(() => applyWorkspaceHooks({...input,registration:{...registration,version:'1.0.2',fingerprint:'c'.repeat(64)}}));
+assert.throws(() => applyWorkspaceHooks({...input,registration:{...updated,version:'1.0.2',fingerprint:'c'.repeat(64)}}));
 assert.deepEqual(fs.readFileSync(settingsFile),settingsBefore);assert.deepEqual(fs.readFileSync(registry),installedBefore);
 assert.deepEqual(fs.readFileSync(receiptFile),priorReceipt);
 assert.equal(fs.existsSync(path.join(root,'.agent-hands/hooks/pending')),false);

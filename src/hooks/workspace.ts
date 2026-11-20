@@ -64,11 +64,12 @@ function prepareSelection(input: WorkspaceHookInput) {
   if (projection) changes.push(projection.change());
   else if (native.preferencePath) { const file = native.preferencePath(base), before=snapshot(file); changes.push({file,before,after:before}); }
   let steps:ExternalHookChange[] = [];
+  let checkSource: (() => void)|undefined;
   if (input.registration) {
     const plan = native.plugin!(base,changes[0],input.registration);
-    changes.push(...plan.changes); steps = plan.steps;
+    changes.push(...plan.changes); steps = plan.steps; checkSource = plan.checkSource;
   }
-  return {scope,changes,steps,result:{changed:steps.length > 0 || changes.some(c => c.before !== c.after),shifted}};
+  return {scope,changes,steps,checkSource,result:{changed:steps.length > 0 || changes.some(c => c.before !== c.after),shifted}};
 }
 function prepare(input: WorkspaceHookInput | WorkspaceHookBatch) {
   if (!input || typeof input !== 'object' || ('selections' in input && (!Array.isArray(input.selections) || Object.keys(input).some(k => !['selections','root'].includes(k))))) throw new TypeError('Invalid workspace hook input');
@@ -79,7 +80,7 @@ function prepare(input: WorkspaceHookInput | WorkspaceHookBatch) {
   const account = selections.find(s => s.registration)?.registration?.accountHome;
   const scope = accountScope({...plans[0].scope,targets:changes.map(row => row.file)},account);
   assertHookOperationIdle(scope);
-  return { changes,steps:plans.flatMap(p => p.steps),scope,account,result:{changed:plans.some(p => p.result.changed),shifted:plans.some(p => p.result.shifted)} };
+  return { changes,steps:plans.flatMap(p => p.steps),checkSources:() => plans.forEach(p => p.checkSource?.()),scope,account,result:{changed:plans.some(p => p.result.changed),shifted:plans.some(p => p.result.shifted)} };
 }
 function accountScope<T extends {pointers:string[];directory:string}>(scope:T,home?:string):T {
   if (!home) return scope;
@@ -100,11 +101,13 @@ export async function applyPreparedWorkspaceHooks(token: PreparedWorkspaceHooks,
   const plan = plans.get(token);
   if (!plan) throw new Error('Expected an unused prepared workspace hook plan');
   plans.delete(token);
-  await withAccountLock(plan.account,plan.scope,() => commitWithParticipant(plan.scope,plan.changes,plan.steps,participant));
+  const peer:WorkspaceParticipant = {id:participant.id,stage:async id => {await participant.stage(id);plan.checkSources();},beforeCommit:async id => {await participant.beforeCommit?.(id);plan.checkSources();},finish:(id,decision) => participant.finish(id,decision)};
+  await withAccountLock(plan.account,plan.scope,() => commitWithParticipant(plan.scope,plan.changes,plan.steps,peer));
   return plan.result;
 }
 export function applyWorkspaceHooks(input: WorkspaceHookInput | WorkspaceHookBatch): WorkspaceHookResult {
-  const {scope,changes,result,steps,account} = prepare(input);
+  const {scope,changes,result,steps,account,checkSources} = prepare(input);
+  checkSources();
   if (result.changed) withAccountLock(account,scope,() => commitHookOperation(scope,changes,steps));
   return result;
 }

@@ -8,6 +8,7 @@ export interface WorkspaceRegistration {
   marketplace: string;
   plugin: string;
   directory: string;
+  expectedPhysicalDirectory?: string;
   version: string;
   fingerprint: string;
   executable: string;

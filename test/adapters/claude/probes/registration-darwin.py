@@ -215,6 +215,7 @@ def probe(base, variant):
     lifecycle(run, binary, project, home, variant)
     if variant == 'supported':
         sp.run([shutil.which('node'), HERE / 'package-registration.mjs', fixture, binary, json.dumps(prefix)],check=True)
+        sp.run([shutil.which('node'), HERE / 'package-registration.mjs', fixture, binary, json.dumps(prefix),'alias'],check=True)
 
 
 if __name__ == '__main__':
