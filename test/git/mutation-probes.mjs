@@ -75,7 +75,9 @@ try {
     }
     const file = probe.fixture ? path.join(sandbox, 'test/git', `${probe.fixture}.mjs`) : path.join(sandbox, 'dist/git', `${probe.module}.js`);
     const original = readFileSync(file, 'utf8');
-    assert.equal(original.split(probe.find).length, 2, `${probe.name}: expected one mutation site`);
+    const matches = typeof probe.find === 'string'
+      ? original.split(probe.find).length - 1 : [...original.matchAll(new RegExp(probe.find.source, `${probe.find.flags}g`))].length;
+    assert.equal(matches, 1, `${probe.name}: expected one mutation site`);
     writeFileSync(file, original.replace(probe.find, probe.replace));
     verify(probe, 1);
     writeFileSync(file, original);
