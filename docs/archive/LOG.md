@@ -5,3 +5,4 @@ One line per task: number with slug, closing date, outcome, body revision, and t
 An `—` outcome means that `result.md` did not name one. An `—` commit means that the body is in no revision the line could name. After `npx --no-install backslop fold N` it is only in the message of the fold commit, so commit the draft, and `show` finds it by the task section in a commit message, then by the `AH-N:` subject. After a bulk fold the body was not in history: it is in the draft if `--embed-missing` was given, and otherwise it is lost.
 
 - <a id="ah-1"></a>`AH-1-project-foundation` · 2026-11-20 · completed · — · Establish the project foundation
+- <a id="ah-2"></a>`AH-2-repository-navigation` · 2026-11-21 · completed · — · Locate and inspect workspace repositories
