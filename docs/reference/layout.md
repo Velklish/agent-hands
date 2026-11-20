@@ -40,7 +40,9 @@ owned resource files in place. Plan the shared `.mcp.json` with target `claude` 
 select Claude Code resources. It does not change Claude Code's settings or register hooks.
 Set `scope: 'resources'` to leave MCP documents and ownership alone. `rulesMode: 'select'`
 returns the ordered `plan.rules` without reading or copying rule bodies. Use `{ path, optional: true }`
-to omit a missing optional rule. The default copies the selected files.
+to omit a missing optional rule. Both optional and required rules must be regular files when present.
+Selection leaves previously copied rules on disk and retains them in the layout's ownership state.
+The default copies the selected files and reconciles that ownership.
 
 Standalone defaults remain strict. Set `mcp.compatibility: 'report'` only when the caller can
 report incomplete native rendering. `plan.diagnostics` and `LayoutResult.diagnostics` name

@@ -159,3 +159,17 @@ test('rule selection preserves candidate order without reading or replacing inst
   assert.throws(()=>planLayout({...base,rules:[{path:a,optional:1}]}),/optional rule flag/);
   assert.throws(()=>planLayout({...base,rules:[path.join(root,'missing.md')]}),/regular rule/);
 });
+
+test('select and copy reject existing nonregular rules even when optional',t=>{
+  const root=scratch(t), file=put(root,'rule.md','Rule');
+  const symlink=path.join(root,'linked.md'), dangling=path.join(root,'dangling.md');
+  fs.symlinkSync(file,symlink,'file');
+  fs.symlinkSync(path.join(root,'missing.md'),dangling,'file');
+  for (const rulesMode of ['select','copy']) {
+    for (const rule of [root,symlink,dangling]) {
+      for (const optional of [false,true]) {
+        assert.throws(()=>planLayout(input(root,'cursor',{rulesMode,rules:[{path:rule,optional}]})),/regular rule/);
+      }
+    }
+  }
+});

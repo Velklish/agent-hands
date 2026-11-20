@@ -3,10 +3,10 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { scratch, put } from '../fixtures.mjs';
-import { applyPreparedWorkspaceHooks, prepareWorkspaceHooks, recoverWorkspaceHooks, inspectWorkspaceHookOperation } from 'agent-hands';
+import { applyWorkspaceHooks, applyPreparedWorkspaceHooks, prepareWorkspaceHooks, recoverWorkspaceHooks, inspectWorkspaceHookOperation } from 'agent-hands';
 
 const file = fileURLToPath(import.meta.url);
 function participant(root,crash) {
@@ -26,7 +26,10 @@ function participant(root,crash) {
     fs.unlinkSync(journal);
   }};
 }
-if (process.argv[2] === 'child') {
+if (process.argv[2] === 'late-child') {
+  const [, , ,root] = process.argv;
+  await applyPreparedWorkspaceHooks(prepareWorkspaceHooks(lateInput(root)),lateParticipant(root,'kill'));
+} else if (process.argv[2] === 'child') {
   const [, , ,root,phase,accountHome] = process.argv;
   const scope = {root,target:'claude'}, peer = participant(root,phase);
   const selection = {target:scope.target,enabled:true,hooks:[{owner:'fixture',command:'sample',event:'SessionStart'}]};
@@ -53,7 +56,7 @@ if (process.argv[2] === 'child') {
   } finally { fs.rmSync(root,{recursive:true,force:true}); }
 }
 
-if (process.argv[2] !== 'child') test('explicit account lock is shared with workspace registration', async t => {
+if (!process.argv[2]) test('explicit account lock is shared with workspace registration', async t => {
   const base = fs.realpathSync(scratch(t)), home = path.join(base,'account'), root = path.join(base,'workspace');
   const directory = path.join(root,'market'), marketplace = 'fixture-market', plugin = 'fixture';
   const version = '1.0.0', fingerprint = 'a'.repeat(64);
@@ -90,3 +93,77 @@ if (process.argv[2] !== 'child') test('explicit account lock is shared with work
   for (const [file,bytes] of unchanged.slice(0,2)) assert.deepEqual(fs.readFileSync(file),bytes);
   assert.deepEqual(JSON.parse(fs.readFileSync(settings)).env,{FOREIGN:'preserve'});
 });
+
+function lateInput(root, command = 'updated') {
+  return {root,selections:['claude','cursor'].map(target => ({
+    target,enabled:true,hooks:[{owner:'fixture',event:'SessionStart',command}],
+    ...(target === 'claude' ? {preferences:{disabledSkills:[command]}} : {}),
+  }))};
+}
+
+function images(root) {
+  return [
+    '.claude/settings.json','.cursor/hooks.json',
+    '.agent-hands/hooks/claude/ownership.json','.agent-hands/hooks/cursor/ownership.json',
+    '.agent-hands/hooks/claude/preferences.json',
+  ].map(file => fs.readFileSync(path.join(root,file)));
+}
+function lateParticipant(root, phase, decisions = []) {
+  const peer = participant(root);
+  const manifest = path.join(root,'manifest');
+  return {...peer,async beforeCommit() {
+    for (const bytes of images(root)) assert.match(bytes.toString(),/updated/);
+    fs.writeFileSync(manifest,'late');
+    if (phase === 'reject') throw new Error('Late fixture failure');
+    if (phase === 'kill') process.kill(process.pid,'SIGKILL');
+  },async finish(id,decision) {
+    assert.equal(fs.readFileSync(manifest,'utf8'),'late');
+    decisions.push(decision);
+    await peer.finish(id,decision);
+  }};
+}
+
+if (!process.argv[2]) for (const phase of ['reject','kill']) {
+  if (phase === 'kill' && process.platform === 'win32') continue;
+  test(`late participant ${phase} restores exact files and can retry`,async t => {
+    const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'peer-late-')));
+    t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+    for (const name of ['first','second']) fs.mkdirSync(path.join(root,name));
+    const manifest=path.join(root,'manifest'), alias=path.join(root,'alias'), journal=path.join(root,'peer.json');
+    fs.writeFileSync(manifest,'first');
+    fs.symlinkSync('first',alias);
+    applyWorkspaceHooks(lateInput(root,'original'));
+    const before=images(root), decisions=[];
+    if (phase === 'reject') {
+      await assert.rejects(applyPreparedWorkspaceHooks(prepareWorkspaceHooks(lateInput(root)),lateParticipant(root,phase,decisions)),/Late fixture failure/);
+    } else {
+      const child=spawnSync(process.execPath,[file,'late-child',root],{encoding:'utf8',timeout:10_000,killSignal:'SIGKILL'});
+      assert.equal(child.error,undefined);
+      assert.equal(child.signal,'SIGKILL',child.stderr);
+      const interrupted=images(root);
+      for (const bytes of interrupted) assert.match(bytes.toString(),/updated/);
+      assert.equal(fs.readFileSync(manifest,'utf8'),'late');
+      assert.equal(fs.readlinkSync(alias),'second');
+      assert.deepEqual(inspectWorkspaceHookOperation({root}),{pending:true,registration:false,targets:['claude','cursor']});
+      const scope={root,targets:['claude','cursor']}, peer=lateParticipant(root,'recover',decisions);
+      await assert.rejects(recoverWorkspaceHooks(scope,{...peer,id:'unrelated'}),/original transaction participant/);
+      assert.deepEqual(images(root),interrupted);
+      assert.ok(fs.existsSync(journal));
+      await recoverWorkspaceHooks(scope,peer);
+    }
+    assert.deepEqual(decisions,['rollback']);
+    assert.deepEqual(images(root),before);
+    assert.equal(fs.readFileSync(manifest,'utf8'),'first');
+    assert.equal(fs.readlinkSync(alias),'first');
+    assert.equal(fs.existsSync(journal),false);
+    assert.equal(inspectWorkspaceHookOperation({root}).pending,false);
+
+    await applyPreparedWorkspaceHooks(prepareWorkspaceHooks(lateInput(root)),lateParticipant(root,'retry',decisions));
+    assert.deepEqual(decisions,['rollback','commit']);
+    for (const bytes of images(root)) assert.match(bytes.toString(),/updated/);
+    assert.equal(fs.readFileSync(manifest,'utf8'),'late');
+    assert.equal(fs.readlinkSync(alias),'second');
+    assert.equal(fs.existsSync(journal),false);
+    assert.equal(inspectWorkspaceHookOperation({root}).pending,false);
+  });
+}
