@@ -4,9 +4,10 @@ An independent project for managing agent workspace layouts and repository navig
 
 ## Current state
 
-This repository contains the project foundation, documentation and a Backslop tracker.
-The product CLI and JavaScript API are not implemented. No product commands or releases
-are available yet. The intended package and executable name is `agent-hands`.
+The repository navigation library can find, inspect, clone and update checkouts.
+Lookup is read-only unless the caller explicitly requests a clone or an update.
+The installable CLI and package entry points are not available yet.
+See [repository navigation](docs/reference/repository-navigation.md) for the library contract.
 
 ## Development
 
@@ -14,6 +15,9 @@ Requires Node.js 26 or newer, npm and Git.
 
 ```sh
 npm ci --registry=https://registry.npmjs.org
+npm run typecheck
+npm test
+node test/git/mutation-probes.mjs
 npx --no-install backslop lint
 npx --no-install backslop status
 npx --no-install backslop gates
