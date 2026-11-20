@@ -1,6 +1,6 @@
 import { type Target } from '../layout/adapter.js';
 import { type WorkspaceParticipant } from './hook-operation.js';
-import type { WorkspacePreferences, WorkspaceRegistration } from './options.js';
+import type { WorkspacePreferences, WorkspaceRegistration, WorkspaceRegistrationPlan, WorkspaceRegistrationOutcome } from './options.js';
 export interface WorkspaceHook {
     owner: string;
     event: string;
@@ -15,6 +15,7 @@ export interface WorkspaceHookScope {
 export interface WorkspaceHookInput extends WorkspaceHookScope {
     enabled: boolean;
     hooks: readonly WorkspaceHook[];
+    mode?: 'ownership';
     release?: readonly string[];
     restore?: readonly string[];
     legacy?: {
@@ -32,6 +33,7 @@ export interface WorkspaceHookResult {
 export interface WorkspaceHookBatch {
     root: string;
     selections: readonly Omit<WorkspaceHookInput, 'root'>[];
+    accountHome?: string;
 }
 export interface WorkspaceHookBatchScope {
     root: string;
@@ -41,10 +43,18 @@ export interface WorkspaceHookBatchScope {
 declare const prepared: unique symbol;
 export interface PreparedWorkspaceHooks extends WorkspaceHookResult {
     readonly [prepared]: true;
+    readonly registrations: readonly Readonly<WorkspaceRegistrationPlan & {
+        target: 'claude';
+    }>[];
+}
+export interface PreparedWorkspaceHookResult extends WorkspaceHookResult {
+    readonly registrations: readonly Readonly<WorkspaceRegistrationOutcome & {
+        target: 'claude';
+    }>[];
 }
 export declare function prepareWorkspaceHooks(input: WorkspaceHookInput | WorkspaceHookBatch): PreparedWorkspaceHooks;
 export declare function planWorkspaceHooks(input: WorkspaceHookInput | WorkspaceHookBatch): WorkspaceHookResult;
-export declare function applyPreparedWorkspaceHooks(token: PreparedWorkspaceHooks, participant: WorkspaceParticipant): Promise<WorkspaceHookResult>;
+export declare function applyPreparedWorkspaceHooks(token: PreparedWorkspaceHooks, participant: WorkspaceParticipant): Promise<PreparedWorkspaceHookResult>;
 export declare function applyWorkspaceHooks(input: WorkspaceHookInput | WorkspaceHookBatch): WorkspaceHookResult;
 type RecoveryScope = WorkspaceHookScope | WorkspaceHookBatchScope;
 export declare function inspectWorkspaceHookOwnership(input: WorkspaceHookScope): {
@@ -58,6 +68,7 @@ export type PendingWorkspaceHooks = {
     pending: true;
     registration: boolean;
     targets: Target[];
+    accountScoped?: true;
 };
 export declare function inspectWorkspaceHookOperation({ root, accountHome }: {
     root: string;

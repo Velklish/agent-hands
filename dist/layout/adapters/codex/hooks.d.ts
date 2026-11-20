@@ -13,8 +13,10 @@ export declare const hooks: {
         changes: import("../../../hooks/hook-journal.js").TargetChange[];
         steps: import("../../../hooks/hook-operation.js").ExternalHookChange[];
         checkSource: () => void;
+        registration: import("../../../index.js").WorkspaceRegistrationPlan;
     }) | undefined;
     registrationFiles?: ((root: string, home: string) => string[]) | undefined;
+    registrationPath?: ((root: string) => string) | undefined;
     accepts: (shell: import("../../../hooks/format.js").Fields) => boolean;
     groupIndices: (list: unknown[], owned: ReadonlySet<number>) => number[];
     grouped: boolean;

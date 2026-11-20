@@ -1,5 +1,5 @@
 import type { HookEntry, HookTarget, Slot } from './hook-plan.js';
-import type { WorkspacePreferences, WorkspaceRegistration } from './options.js';
+import type { WorkspacePreferences, WorkspaceRegistration, WorkspaceRegistrationPlan } from './options.js';
 import type { TargetChange } from './hook-journal.js';
 import type { ExternalHookChange } from './hook-operation.js';
 export type Fields = Record<string, unknown>;
@@ -13,8 +13,10 @@ export interface HookFormat {
         changes: TargetChange[];
         steps: ExternalHookChange[];
         checkSource: () => void;
+        registration: WorkspaceRegistrationPlan;
     };
     registrationFiles?(root: string, home: string): string[];
+    registrationPath?(root: string): string;
     path: string;
     empty(): Fields;
     accepts(shell: Fields): boolean;

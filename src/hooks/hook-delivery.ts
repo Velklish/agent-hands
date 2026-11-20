@@ -11,6 +11,7 @@ export interface ManagedHooks {
   readonly intents: readonly HookEntry[];
   readonly release?: readonly string[];
   readonly restore?: readonly string[];
+  readonly ownershipOnly?: boolean;
   readonly expectedState?: string | null;
   readonly reconcile?: boolean;
   readonly legacy?: { readonly document: string; readonly entries: readonly HookEntry[] };
@@ -100,6 +101,7 @@ export function prepareHookDocument(spec: ManagedHooks): { changes: TargetChange
     } catch { throw new Error('Invalid hook document'); }
     if (canonical !== document.match(/"(?:\\.|[^"\\])*"|[^\s]/gs)?.join('')) throw new Error('Unsupported hook document encoding');
   }
+  if (spec.ownershipOnly && state === null) throw new Error('Ownership changes require a confirmed hook receipt');
   const previous = receipt(spec,state,document);
   if (state === null && spec.legacy) {
     if (document !== spec.legacy.document) throw new Error('Legacy hook snapshot changed');
@@ -107,6 +109,8 @@ export function prepareHookDocument(spec: ManagedHooks): { changes: TargetChange
   }
   const released = new Set(previous.released);
   const disconnected = new Set<string>();
+  const preserved = spec.ownershipOnly ? previous.entries.filter(entry =>
+    !spec.release?.includes(entry.owner) && !spec.restore?.includes(entry.owner)) : [];
   for (const owner of spec.restore ?? []) {
     const entry = previous.entries.find(e => e.owner === owner);
     if ((!entry && !released.has(owner) && state !== null && !spec.reconcile) || !spec.intents.some(e => e.owner === owner) || spec.release?.includes(owner)) throw new Error('Invalid restoration selection');
@@ -127,20 +131,25 @@ export function prepareHookDocument(spec: ManagedHooks): { changes: TargetChange
     released.add(owner);
   }
   const keep = (e: HookEntry) => !released.has(e.owner);
-  const plan = planHooks({ target:spec.target,documentJson:document,historyJson:JSON.stringify({ kind:'confirmed',entries:previous.entries.filter(e => keep(e) && !disconnected.has(e.owner)) }),intentsJson:JSON.stringify(spec.intents.filter(keep)) });
+  const history = previous.entries.filter(e => keep(e) && !disconnected.has(e.owner) && (!spec.ownershipOnly || spec.restore?.includes(e.owner)));
+  const plan = planHooks({ target:spec.target,documentJson:document,historyJson:JSON.stringify({ kind:'confirmed',entries:history }),intentsJson:JSON.stringify(spec.intents.filter(keep)) });
   if (!plan.ok) throw new Error(`Hook plan refused: ${plan.reason}`);
+  const nextEntries = [...preserved,...plan.next];
+  if (preserved.length && plan.next.length && !planHooks({
+    target:spec.target,documentJson:null,historyJson:null,intentsJson:JSON.stringify(nextEntries),
+  }).ok) throw new Error('Restored hook conflicts with another confirmed owner');
   const trusted = document !== null && previous.structure.digest === sha256(document);
   const structure = reconcileStructure(spec,trusted ? previous.structure : emptyStructure(),input,plan);
   const planned = plan.actions.every(a => a.kind === 'keep') ? document : JSON.stringify(plan.document,null,2) + '\n';
   let after = spec.projectDocument ? spec.projectDocument(planned,document) : planned;
   let createdDocument = after !== null && (document === null || (trusted && previous.createdDocument));
   const empty = ['{}',JSON.stringify(format(spec.target).empty())];
-  if (createdDocument && !plan.next.length && !released.size && empty.includes(JSON.stringify(JSON.parse(after!)))) {
+  if (createdDocument && !nextEntries.length && !released.size && empty.includes(JSON.stringify(JSON.parse(after!)))) {
     after = null;
     createdDocument = false;
   }
   structure.digest = after === null ? null : sha256(after);
-  const next: Receipt = { ...previous,createdDocument,structure,released:[...released],entries:plan.next };
+  const next: Receipt = { ...previous,createdDocument,structure,released:[...released],entries:nextEntries };
   return { changes:[{ file:spec.document,before:document,after },{ file:spec.state,before:state,after:state === null && !next.entries.length && !next.released.length && !createdDocument ? null : JSON.stringify(next) }], shifted:plan.shifted,released:next.released };
 }
 

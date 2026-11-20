@@ -27,13 +27,23 @@ if (preview.changed) applyWorkspaceHooks(input);
 
 `enabled: false` removes the selected target's confirmed callbacks. It leaves foreign and released callbacks in place. `release: ['notice']` relinquishes ownership without deleting a command; subsequent updates leave that owner alone. `restore` explicitly reconnects the selected desired definition. An edited or ambiguous owned callback otherwise stops application. `workspaceHookOutcome(owner, event, exitStatus)` reports the observed outcome of one invocation: zero succeeds; a nonzero or unavailable status fails. It neither runs nor retries the command.
 
+For a change to ownership alone, set `mode: 'ownership'` and `enabled: true`. Pass
+`release: ['notice'], hooks: []` to relinquish one owner while keeping the rest of the selection.
+Pass `restore: ['notice'], hooks: [noticeDefinition]` with the confirmed definition to restore an
+absent callback or reconnect one unchanged released callback. This mode requires a receipt and
+refuses ambiguous matches. It leaves other owners and callbacks in place.
+
 For several targets, pass `{root, selections: [{target, enabled, hooks}, ...]}` to the same operations. The package plans every selected document before applying any of them. Confirmed history identifies each callback by its exact previous condition and value, not by its command alone. For migration, supply `legacy: {documentSha256, hooks, preferences?}` only after verifying the previous owner's receipt. The digest must match the complete document bytes, and each claimed callback must match one unique physical entry. Do not infer legacy ownership from a matching command.
+
+A batch can specify an absolute `accountHome` to use the same account lock as plugin registration. When a selection also requests registration, the two account paths must resolve to the same directory. Use the original account with inspection and recovery. A pending account-scoped batch without registration reports `accountScoped: true`.
 
 ## Composing a transaction
 
 `inspectWorkspaceHookOwnership({root,target})` returns `null` without a receipt; otherwise it returns confirmed `owners` and `released` identifiers. It verifies the receipt against the current document. Missing or ambiguous callbacks raise a conflict instead of reporting stale ownership as active.
 
 `prepareWorkspaceHooks(input)` returns an opaque, single-use plan for `applyPreparedWorkspaceHooks(plan, participant)`. Use this when a separate writer must commit its own layout, links and manifest with the hook settings. The caller preflights its own resources before starting. The package checks its snapshots again under the writer lock before calling the participant.
+
+The prepared plan's `registrations` lists the harness, requested version, known previous version and action (`install`, `update`, or `current`). After a successful apply, the result lists the confirmed status (`installed`, `updated`, or `current`). An empty list means the batch requested no registration.
 
 - `participant.id` identifies an implementation that can reopen its durable state after process restart.
 - `await stage(operationId)` checks the external preimages, saves enough state for rollback, then stages reversible changes. Keep the before-images until `finish`. The participant does not write native hook documents or registration records.

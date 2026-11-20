@@ -15,3 +15,11 @@ export interface WorkspaceRegistration {
   accountHome: string;
   legacy?: {fingerprint: string; version: string};
 }
+export interface WorkspaceRegistrationPlan {
+  action: 'install' | 'update' | 'current';
+  version: string;
+  previousVersion?: string;
+}
+export interface WorkspaceRegistrationOutcome extends Omit<WorkspaceRegistrationPlan, 'action'> {
+  status: 'installed' | 'updated' | 'current';
+}

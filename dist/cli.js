@@ -78,7 +78,10 @@ function hookConfig(file) {
     const selections = 'selections' in input ? input.selections : [input];
     if (!Array.isArray(selections) || !selections.length)
         throw new HookCliError('Expected at least one hook selection');
-    let accountHome;
+    const batchAccount = 'selections' in input ? input.accountHome : undefined;
+    if (batchAccount !== undefined && (typeof batchAccount !== 'string' || !path.isAbsolute(batchAccount)))
+        throw new HookCliError('Hook configuration requires an absolute account home');
+    let registrationAccount;
     const targets = selections.map(selection => {
         if (!record(selection))
             throw new HookCliError('Expected a hook selection object');
@@ -91,14 +94,17 @@ function hookConfig(file) {
             if (target !== 'claude' || !record(registration) ||
                 typeof registration.accountHome !== 'string' || !path.isAbsolute(registration.accountHome))
                 throw new HookCliError('Claude Code plugin registration requires an absolute account home');
-            accountHome = registration.accountHome;
+            registrationAccount = registration.accountHome;
         }
         return target;
     });
     if (new Set(targets).size !== targets.length)
         throw new HookCliError('Expected distinct hook targets');
     // The public operations validate the desired hook definitions before planning or writing.
-    return { input: input, targets, accountHome };
+    if (batchAccount && registrationAccount && realpathSync(batchAccount) !== realpathSync(registrationAccount))
+        throw new HookCliError('Claude Code registration account must match the batch account');
+    return { input: input,
+        targets, accountHome: batchAccount ?? registrationAccount, registration: registrationAccount !== undefined };
 }
 function runHookCommand(command, args) {
     const options = { config: { type: 'string' } };
@@ -112,7 +118,7 @@ function runHookCommand(command, args) {
     })();
     if (!values.config)
         throw new HookCliError(usage);
-    const { input, targets, accountHome } = hookConfig(values.config);
+    const { input, targets, accountHome, registration } = hookConfig(values.config);
     if (command === 'hooks-plan')
         return planWorkspaceHooks(input);
     if (command === 'hooks-apply')
@@ -130,7 +136,7 @@ function runHookCommand(command, args) {
     }
     if (!pending.pending)
         return { recovered: false };
-    if (pending.registration !== Boolean(accountHome) ||
+    if (pending.registration !== registration || Boolean(pending.registration || pending.accountScoped) !== Boolean(accountHome) ||
         pending.targets.length !== targets.length || !pending.targets.every(target => targets.some(selected => selected === target)))
         throw new HookCliError('Recovery requires the original hook targets and registration account. See hooks-inspect.');
     recoverWorkspaceHooks({ root, targets, accountHome });

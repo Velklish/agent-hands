@@ -4,9 +4,12 @@ import { spawnSync } from 'node:child_process';
 import { sha256 } from '../../fs.js';
 import { snapshot } from '../../../hooks/hook-journal.js';
 import { inspectRegistration, registrationEvidence, registrationPreflight, registrationUnchanged } from './registration.js';
+export function registrationPath(root) {
+    return path.join(root, '.agent-hands/hooks/claude/registration.json');
+}
 export function registrationFiles(root, home) {
     const profile = path.join(realpathSync(home), '.claude');
-    return [path.join(profile, 'plugins/known_marketplaces.json'), path.join(profile, 'plugins/installed_plugins.json'), path.join(root, '.claude/settings.local.json'), path.join(profile, 'settings.json'), path.join(root, '.agent-hands/hooks/claude/registration.json')];
+    return [path.join(profile, 'plugins/known_marketplaces.json'), path.join(profile, 'plugins/installed_plugins.json'), path.join(root, '.claude/settings.local.json'), path.join(profile, 'settings.json'), registrationPath(root)];
 }
 export function plugin(root, settings, input) {
     const { plugin, marketplace, version, fingerprint } = input;
@@ -45,8 +48,10 @@ export function plugin(root, settings, input) {
         throw new Error('Unconfirmed project plugin registration');
     receipt.after = JSON.stringify({ plugin, marketplace, directory, fingerprint, version });
     const steps = [];
+    const registration = { action: current.installed ? 'update' : 'install', version,
+        ...(typeof current.version === 'string' && { previousVersion: current.version }) };
     if (prior?.fingerprint === fingerprint && current.version === version)
-        return { changes, steps, checkSource };
+        return { changes, steps, checkSource, registration: { ...registration, action: 'current' } };
     const binary = realpathSync(input.executable), binarySha256 = sha256(readFileSync(binary));
     const request = { binarySha256, version: '2.1.311 (Claude Code)', platform: process.platform, arch: process.arch, marketplace, plugin, directory, step: current.installed ? 'update' : 'install' };
     registrationPreflight(request, root, before);
@@ -61,5 +66,5 @@ export function plugin(root, settings, input) {
                 return result.status;
             }, verify: (a, b, exit) => { checkSource(); return registrationEvidence(config, root, version, read(a), read(b), exit, destination(version)); }, verifyFailure: (a, b) => registrationUnchanged(config, read(a), read(b)) });
     }
-    return { changes, steps, checkSource };
+    return { changes, steps, checkSource, registration };
 }

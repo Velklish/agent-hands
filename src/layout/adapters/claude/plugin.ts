@@ -4,12 +4,15 @@ import { spawnSync } from 'node:child_process';
 import { sha256 } from '../../fs.js';
 import { snapshot, type TargetChange } from '../../../hooks/hook-journal.js';
 import type { ExternalHookChange } from '../../../hooks/hook-operation.js';
-import type { WorkspaceRegistration } from '../../../hooks/options.js';
+import type { WorkspaceRegistration, WorkspaceRegistrationPlan } from '../../../hooks/options.js';
 import { inspectRegistration, registrationEvidence, registrationPreflight, registrationUnchanged, type RegistrationRequest } from './registration.js';
 
+export function registrationPath(root:string) {
+  return path.join(root,'.agent-hands/hooks/claude/registration.json');
+}
 export function registrationFiles(root:string,home:string) {
   const profile = path.join(realpathSync(home),'.claude');
-  return [path.join(profile,'plugins/known_marketplaces.json'),path.join(profile,'plugins/installed_plugins.json'),path.join(root,'.claude/settings.local.json'),path.join(profile,'settings.json'),path.join(root,'.agent-hands/hooks/claude/registration.json')];
+  return [path.join(profile,'plugins/known_marketplaces.json'),path.join(profile,'plugins/installed_plugins.json'),path.join(root,'.claude/settings.local.json'),path.join(profile,'settings.json'),registrationPath(root)];
 }
 export function plugin(root:string,settings:TargetChange,input:WorkspaceRegistration) {
   const {plugin,marketplace,version,fingerprint} = input;
@@ -39,7 +42,10 @@ export function plugin(root:string,settings:TargetChange,input:WorkspaceRegistra
   if (current.installed !== !!prior || (prior && (prior.version !== current.version || current.installPath !== destination(prior.version))) || (current.marketplace && !current.installed)) throw new Error('Unconfirmed project plugin registration');
   receipt.after = JSON.stringify({plugin,marketplace,directory,fingerprint,version});
   const steps: ExternalHookChange[] = [];
-  if (prior?.fingerprint === fingerprint && current.version === version) return {changes,steps,checkSource};
+  const registration: WorkspaceRegistrationPlan = {action:current.installed ? 'update' : 'install',version,
+    ...(typeof current.version === 'string' && {previousVersion:current.version})};
+  if (prior?.fingerprint === fingerprint && current.version === version)
+    return {changes,steps,checkSource,registration:{...registration,action:'current' as const}};
   const binary = realpathSync(input.executable), binarySha256 = sha256(readFileSync(binary));
   const request: RegistrationRequest = {binarySha256,version:'2.1.311 (Claude Code)',platform:process.platform,arch:process.arch,marketplace,plugin,directory,step:current.installed?'update':'install'};
   registrationPreflight(request,root,before);
@@ -53,5 +59,5 @@ export function plugin(root:string,settings:TargetChange,input:WorkspaceRegistra
       return result.status;
     },verify:(a,b,exit) => {checkSource();return registrationEvidence(config,root,version,read(a),read(b),exit,destination(version));},verifyFailure:(a,b) => registrationUnchanged(config,read(a),read(b))});
   }
-  return {changes,steps,checkSource};
+  return {changes,steps,checkSource,registration};
 }

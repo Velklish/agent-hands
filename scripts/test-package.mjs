@@ -47,9 +47,12 @@ function smoke(spec,label) {
   const hook = (cmd, file = 'hooks.json') => JSON.parse(cli('hooks-' + cmd,'--config',file));
   assert.deepEqual(hook('plan'),{changed:false,shifted:false});
   assert.deepEqual(hook('inspect'),{pending:false,registration:false,ownership:['codex','cursor'].map(target=>({target,ownership:{owners:1,released:0}}))});
-  node('--input-type=module','-e',`import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {inspectWorkspaceHookOwnership, planWorkspaceHooks} from 'agent-hands';
+  node('--input-type=module','-e',`import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {artifactGroup, collectSkills, createOutputWriter, inspectWorkspaceHookOwnership, planWorkspaceHooks} from 'agent-hands';
 const data=JSON.parse(readFileSync('hooks.json','utf8')); assert.deepEqual(planWorkspaceHooks(data),{changed:false,shifted:false});
 for(const {target} of data.selections) assert.deepEqual(inspectWorkspaceHookOwnership({root:data.root,target}),{owners:['node-version'],released:[]});
+const writer=createOutputWriter(data.root,{files:{}});writer.stage('sample','rendered');writer.preflight();writer.apply();
+assert.equal(readFileSync(data.root+'/sample','utf8'),'rendered');assert.ok(writer.files.sample);
+assert.equal(artifactGroup(['sample'],'sample/one'),'sample');assert.deepEqual(collectSkills([]).skills,[]);
 for(const suffix of ['dist/index.js','dist/layout/adapters/cursor/index.js','dist/hooks/workspace.js','src/index.ts','package.json'])
   await assert.rejects(import('agent-hands/'+suffix),{code:'ERR_PACKAGE_PATH_NOT_EXPORTED'});`);
   const previous = read(path.join(batch.root,'.codex/hooks.json'));
@@ -77,13 +80,18 @@ const rename=fs.renameSync;fs.renameSync=(from,to)=>{rename(from,to);if(to===pat
   assert.throws(()=>hook('apply','single.json'),error=>error.status===1 && !error.stdout &&
     !/invalid-private-setting|example-private-value|hooks-workspace/.test(error.stderr));
   run('python3',['-B',path.join(pkg,'profiles/my-voice/skills/my-voice-calibrate/scripts/collect.py'),'--help'],project);
-  write(path.join(project,'consumer.mts'),`import {planLayout,applyLayout,createNavigation,planWorkspaceHooks,type LayoutInput,type LayoutResult,type RepositoryResolution,type WorkspaceHookBatch,type WorkspaceHookResult} from 'agent-hands';
+  write(path.join(project,'consumer.mts'),`import {planLayout,applyLayout,createNavigation,createOutputWriter,artifactLayout,collectSubagents,prepareWorkspaceHooks,planWorkspaceHooks,type OutputMutations,type LayoutInput,type LayoutResult,type RepositoryResolution,type WorkspaceHookBatch,type WorkspaceHookResult} from 'agent-hands';
 const input: LayoutInput = {root:'/work',target:'cursor',rules:[],servers:[],subagents:[],skills:[]};
 for(const target of ['cursor','codex'] as const){const result:Promise<LayoutResult>=applyLayout(planLayout({...input,target}));void result;}
 const nav=createNavigation({root:input.root,routeHost:()=>({zone:'repos',gitlab:true})});
 const repository:Promise<RepositoryResolution>=nav.resolve('example',{allowGroup:true});void repository;
-const hooks:WorkspaceHookBatch={root:input.root,selections:[{target:'codex',enabled:true,hooks:[]},{target:'cursor',enabled:true,hooks:[]}]};
+const hooks:WorkspaceHookBatch={root:input.root,accountHome:'/home',selections:[{target:'codex',enabled:true,hooks:[]},{target:'cursor',enabled:true,hooks:[]}]};
 const preview:WorkspaceHookResult=planWorkspaceHooks(hooks);void preview;
+const registrations = prepareWorkspaceHooks(hooks).registrations.map(row => row.action);void registrations;
+const artifacts=artifactLayout(['output'],{root:'/store',artifacts:'/store/bundles',renderer:1});
+const writer=createOutputWriter(input.root,{files:{}},{artifacts});
+const mutations:OutputMutations={write(){},remove(){},bind(){}};
+writer.apply(undefined,undefined,mutations);collectSubagents([]);
 // @ts-expect-error Commands are strings.
 planWorkspaceHooks({root:input.root,target:'codex',enabled:true,hooks:[{owner:'test',event:'SessionStart',command:1}]});
 // @ts-expect-error A targeted scan accepts namespace strings only.

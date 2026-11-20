@@ -220,7 +220,7 @@ export class Writer {
     return result;
   }
 
-  preflight() {
+  preflight(reject = this.#configuration.reject) {
     for (const rel of [...this.replacedFiles, ...this.replacedDirs])
       if (!isInnerRelPath(rel) || path.resolve(this.root,rel) === this.root) throw new Error('Replacement escapes the root');
     if (this.#configuration.protectEdits) {
@@ -233,18 +233,18 @@ export class Writer {
       }
     }
     if (this.outside.length) {
-      this.#configuration.reject(this.#configuration.text.outside(this.outside));
+      reject(this.#configuration.text.outside(this.outside));
     }
     if (this.collisions.length) {
-      this.#configuration.reject(this.#configuration.text.collision(this.collisions));
+      reject(this.#configuration.text.collision(this.collisions));
     }
     if (this.conflicts.length) {
-      this.#configuration.reject(this.#configuration.text.conflict(this.conflicts));
+      reject(this.#configuration.text.conflict(this.conflicts));
     }
   }
 
   commit(beforeWrites?: () => void, atomic?: AtomicOutputs, mutations?: OutputMutations) {
-    this.preflight();
+    this.preflight(mutations ? message => { throw new Error(message); } : undefined);
     if (mutations) for (const staged of this.staged) {
       if (this.#group(staged.rel) || this.replacedDirs.has(staged.rel)) continue;
       const current = existsSync(staged.abs) ? sha256(readFileSync(staged.abs)) : null;

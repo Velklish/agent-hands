@@ -8,6 +8,7 @@ export interface ManagedHooks {
     readonly intents: readonly HookEntry[];
     readonly release?: readonly string[];
     readonly restore?: readonly string[];
+    readonly ownershipOnly?: boolean;
     readonly expectedState?: string | null;
     readonly reconcile?: boolean;
     readonly legacy?: {
