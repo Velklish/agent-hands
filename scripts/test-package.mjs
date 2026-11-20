@@ -54,6 +54,8 @@ try {
   const archive=path.join(packed,pack.filename); smoke(archive,'tarball');
   const mirror=path.join(temp,'mirror.git');run('git',['init','--bare','-q',mirror]);
   run('git',['--git-dir',mirror,'fetch','--no-tags',source,sha]);
+  run('git',['--git-dir',mirror,'update-ref','refs/heads/main',sha]);
+  run('git',['--git-dir',mirror,'symbolic-ref','HEAD','refs/heads/main']);
   const tag='v'+version;run('git',['--git-dir',mirror,'update-ref','refs/tags/'+tag,sha]);
   assert.equal(run('git',['--git-dir',mirror,'rev-parse','refs/tags/'+tag]),sha);
   smoke('git+'+pathToFileURL(mirror).href+'#'+tag,'git');
