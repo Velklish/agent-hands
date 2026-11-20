@@ -95,10 +95,10 @@ def interactive_thread(thread, excluded_originators):
     source = thread.get("source")
     automation_markers = ("automation", "subagent", "scheduled")
     originator = str(thread.get('originator') or '').lower()
-    origin = f'{thread.get("threadSource")} {originator}'.lower()
+    thread_source = str(thread.get('threadSource') or '').lower()
     return (source in ("cli", "vscode", "appServer")
             and not thread.get("parentThreadId")
-            and not any(word in origin for word in automation_markers)
+            and not any(word in thread_source for word in automation_markers)
             and not any(word in originator for word in excluded_originators))
 
 

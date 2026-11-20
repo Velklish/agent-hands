@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import stat
 from tempfile import NamedTemporaryFile
+from unicodedata import normalize
 
 from collect import write_output
 
@@ -51,6 +52,9 @@ def profile_content(existing):
 
 
 def review(path, edits, output):
+    # A missing leaf has no inode to compare on case-insensitive filesystems.
+    if normalize('NFC', str(path.resolve())).casefold() == normalize('NFC', str(output.resolve())).casefold():
+        raise ValueError('The proposal output must be separate from the profile')
     existing = read_profile(path)
     base = profile_content(existing)
     result = edit_profile(base, edits)

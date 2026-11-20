@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 import json
 import os
 from pathlib import Path
@@ -28,9 +29,14 @@ class CalibrationTests(unittest.TestCase):
         path.write_text(json.dumps(data), encoding='utf-8')
         return path
 
-    def cli(self, script, *args, env=None):
+    def cli(self, script, *args):
+        env = {key: os.environ[key] for key in ('SYSTEMROOT', 'WINDIR') if key in os.environ}
+        for key in ('HOME', 'USERPROFILE', 'PATH', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'XDG_DATA_HOME',
+                    'XDG_CONFIG_HOME', 'APPDATA', 'VSCODE_PORTABLE', 'VSCODE_APPDATA'):
+            env[key] = str(self.root / key.lower())
+        env['PYTHONUTF8'] = '1'
         return subprocess.run([sys.executable, '-B', str(SCRIPTS / script), *map(str, args)],
-                              cwd=self.root, text=True, capture_output=True, env=env)
+                              cwd=self.root, encoding='utf-8', capture_output=True, env=env)
 
     def test_samples_only_cli_works_outside_a_project_and_keeps_language_and_genre(self):
         samples = self.input('samples.json', [
@@ -41,11 +47,11 @@ class CalibrationTests(unittest.TestCase):
         ])
         output = self.root / 'corpus.json'
         result = self.cli('collect.py', '--samples', samples, '--all-available', '--language', 'en',
-                          '--language', 'pt-br', '--output', output, env={**os.environ, 'HOME': str(self.root)})
+                          '--language', 'pt-br', '--output', output)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('SOURCE ONLY MARKER', result.stdout + result.stderr)
         self.assertEqual(result.stderr, '')
-        source, = json.loads(output.read_text())['sources']
+        source, = json.loads(output.read_text(encoding='utf-8'))['sources']
         self.assertEqual(source['language_counts'], {'en': 1, 'pt-br': 1, 'unknown': 1})
         self.assertEqual(source['genre_counts'], {'note': 1, 'letter': 1, 'unknown': 1})
         self.assertEqual(source['stats']['outside_languages'], 1)
@@ -62,9 +68,13 @@ class CalibrationTests(unittest.TestCase):
         dates = ['2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', None]
         history.write_text('\n'.join(json.dumps(dict(record, uuid=str(i), timestamp=date))
                                      for i, date in enumerate(dates)), encoding='utf-8')
-        with patch.dict(os.environ, CLAUDE_CONFIG_DIR=str(self.root)), patch('voice_sources.collect_bb') as excluded:
+        with ExitStack() as stack:
+            stack.enter_context(patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(self.root)}, clear=True))
+            excluded = [stack.enter_context(patch(f'voice_sources.collect_{name}'))
+                        for name in ('bb', 'codex', 'cursor', 'opencode')]
             value, code = collect(selected=['claude'], since=dates[0], until=dates[1], languages=['en'])
-        excluded.assert_not_called()
+        for reader in excluded:
+            reader.assert_not_called()
         source, = value['sources']
         message, = source['messages']
         self.assertEqual((code, source['status'], message['id']), (3, 'partial', '0'))
@@ -89,6 +99,21 @@ class CalibrationTests(unittest.TestCase):
         self.assertEqual(partial['upstream_reason'], 'SOURCE ONLY MARKER')
         self.assertEqual(partial['messages'][0]['origin'], {'line': 4, 'input_kind': 'imported-report'})
         self.assertEqual((failed['status'], failed['messages']), ('unavailable', []))
+
+    def test_import_retains_ready_reason_only_in_private_output(self):
+        marker = 'FICTIONAL COVERAGE NOTE'
+        report = self.input('external.json', {'schema_version': 1, 'source': 'journal', 'status': 'ready',
+                            'reason': marker, 'messages': [
+                                {'id': 'one', 'text': 'Synthetic note.', 'language': 'en',
+                                 'conversation_id': 'notebook', 'origin': {'line': 1}},
+                            ]})
+        output = self.root / 'corpus.json'
+        result = self.cli('collect.py', '--report', f'journal={report}', '--all-available', '--language', 'en',
+                          '--output', output)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn(marker, result.stdout + result.stderr)
+        source, = json.loads(output.read_text())['sources']
+        self.assertEqual((source['status'], source.get('upstream_reason')), ('ready', marker))
 
     def test_empty_sample_selection_is_not_ready_evidence(self):
         value, code = collect(selected=[], samples=self.input('empty.json', []), languages=['en'])
@@ -161,6 +186,22 @@ class CalibrationTests(unittest.TestCase):
             apply(self.profile, self.proposal, approved)
         self.assertFalse(self.profile.exists() or other.exists())
 
+    def test_review_rejects_profile_path_as_output_even_through_an_alias(self):
+        edits = self.input('edits.json', [
+            {'before': 'Form of address: not specified.', 'after': 'Use first names.'},
+        ])
+        for label, relative in (('direct', 'SKILL.md'), ('relative', 'nested/../SKILL.md'), ('case', 'skill.md')):
+            with self.subTest(spelling=label):
+                parent = self.root / label
+                (parent / 'nested').mkdir(parents=True)
+                profile = parent / 'SKILL.md'
+                output = parent / relative
+                result = self.cli('voice_profile.py', 'review', '--profile', profile, '--edits', edits,
+                                  '--output', output)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn('proposal output must be separate', result.stderr)
+                self.assertFalse(profile.exists() or output.exists())
+
     def test_review_rejects_a_raw_corpus_as_edits(self):
         samples = self.input('samples.json', [{'id': 'only', 'text': 'SOURCE ONLY MARKER'}])
         corpus, code = collect(selected=[], samples=samples, languages=['en'])
@@ -173,6 +214,9 @@ class CalibrationTests(unittest.TestCase):
         self.assertFalse(self.profile.exists() or self.proposal.exists())
 
     def test_documented_entry_points_and_neutral_template(self):
+        readme = (ROOT.parents[1] / 'README.md').read_text()
+        self.assertIn('(profiles/my-voice/README.md)', readme)
+        self.assertIn('Python 3.10 or newer', readme)
         docs = (SKILL / 'references' / 'calibration.md').read_text()
         for flag in ('--samples', '--local', '--report', '--language', '--all-available', '--approved'):
             script = 'voice_profile.py' if flag == '--approved' else 'collect.py'

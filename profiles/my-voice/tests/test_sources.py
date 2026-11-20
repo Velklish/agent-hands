@@ -1,6 +1,7 @@
 import hashlib
 from contextlib import closing
 import json
+import os
 from pathlib import Path
 import sqlite3
 import sys
@@ -10,7 +11,7 @@ from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'skills/my-voice-calibrate/scripts'
 sys.path.insert(0, str(SCRIPTS))
-from voice_sources.common import Report, timestamp
+from voice_sources.common import Report, readonly_db, timestamp
 from voice_sources.claude import collect_claude
 from voice_sources.codex import ReadOnlyAppServer, collect_codex, pages
 from voice_sources.bb import collect_bb
@@ -46,6 +47,17 @@ class SourceTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='my-voice-sources-')
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
+        self.cursor_ide_root = self.home / 'Library/Application Support/Cursor/User/globalStorage'
+        guard = patch('voice_sources.cursor.readonly_db', side_effect=self.open_cursor_fixture)
+        self.cursor_reader = guard.start()
+        self.addCleanup(guard.stop)
+
+    def open_cursor_fixture(self, path):
+        self.assertTrue(Path(path).resolve().is_relative_to(self.home.resolve()), 'Cursor tried to open a non-fixture database')
+        return readonly_db(path)
+
+    def collect_fixture_cursor(self):
+        return collect_cursor(home=self.home, ide_roots=[self.cursor_ide_root])
 
     def test_timestamp_and_period_are_utc_and_half_open(self):
         report = Report('test', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z')
@@ -118,27 +130,41 @@ class SourceTests(unittest.TestCase):
 
     def test_codex_custom_originator_exclusion_covers_api_and_fallback(self):
         root = self.home / '.codex'
-        secret_event = {'type': 'event_msg', 'payload': {'type': 'user_message', 'message': 'Generated text'}}
-        for name, originator in [('from-file', 'ExampleDriver:v1'), ('human', 'interactive')]:
+        for name, originator in [('from-file', 'automation-console:v1'), ('human', 'interactive')]:
             write_jsonl(root / 'sessions' / f'{name}.jsonl', [
                 {'type': 'session_meta', 'payload': {'id': name, 'source': 'cli', 'originator': originator}},
-                secret_event if name == 'from-file' else dict(secret_event, payload={'type': 'user_message', 'message': 'Human text'}),
+                {'type': 'event_msg', 'payload': {'type': 'user_message', 'message': f'Fixture from {name}'}},
             ])
 
         class Client:
+            def __init__(self):
+                self.read_threads = []
+
             def call(self, method, params):
                 if method == 'thread/list':
                     return {'data': [] if params['archived'] else [
-                        {'id': 'from-api', 'source': 'appServer', 'originator': 'EXAMPLEDRIVER:v2'}]}
-                raise AssertionError('Excluded API thread was read')
+                        {'id': 'from-api', 'source': 'appServer', 'originator': 'AUTOMATION-CONSOLE:v2'},
+                        {'id': 'scheduled', 'source': 'cli', 'threadSource': 'scheduled automation'}]}
+                if method == 'thread/turns/list':
+                    self.read_threads.append(params['threadId'])
+                    return {'data': [{'id': 'turn', 'items': [{'id': 'message', 'type': 'userMessage',
+                                                              'content': 'Fixture from API'}]}]}
+                raise AssertionError(method)
 
             def close(self):
                 pass
 
-        report = collect_codex(roots=[root], rpc_factory=lambda _: Client(), excluded_originators=('exampledriver',))
-        self.assertEqual('ready', report['status'])
-        self.assertEqual(2, report['stats']['excluded_threads'])
-        self.assertEqual(['Human text'], [message['text'] for message in report['messages']])
+        for markers, expected_ids, read_threads, excluded in (
+            ((), {'from-api', 'from-file', 'human'}, ['from-api'], 1),
+            (('automation-console',), {'human'}, [], 3),
+        ):
+            with self.subTest(markers=markers):
+                client = Client()
+                report = collect_codex(roots=[root], rpc_factory=lambda _: client, excluded_originators=markers)
+                self.assertEqual('ready', report['status'])
+                self.assertEqual(expected_ids, {message['conversation_id'] for message in report['messages']})
+                self.assertEqual(read_threads, client.read_threads)
+                self.assertEqual(excluded, report['stats']['excluded_threads'])
 
     def test_codex_paginated_rollout_requires_complete_retained_source(self):
         root = self.home / '.codex'
@@ -515,7 +541,7 @@ class SourceTests(unittest.TestCase):
         agent = field(1, 'Worker instruction') + field(2, 'agent') + field(27, 'worker')
         plan = field(1, 'Generated plan execution') + field(2, 'plan') + field(14, b'')
         self.cursor_database([ordinary, simulated, agent, plan], extra_unreachable=True)
-        report = collect_cursor(home=self.home)
+        report = self.collect_fixture_cursor()
         self.assertEqual('ready', report['status'])
         self.assertEqual(['human'], [m['id'] for m in report['messages']])
         self.assertEqual('2026-01-01T00:00:00.000000Z', report['messages'][0]['timestamp'])
@@ -523,7 +549,7 @@ class SourceTests(unittest.TestCase):
 
     def test_cursor_text_blob_is_utf8_and_missing_date_stays_unknown(self):
         self.cursor_database([(b'Synthetic long text', field(2, 'user'))])
-        report = collect_cursor(home=self.home)
+        report = self.collect_fixture_cursor()
         self.assertEqual('Synthetic long text', report['messages'][0]['text'])
         self.assertIsNone(report['messages'][0]['timestamp'])
         self.assertEqual('unknown', report['messages'][0]['origin']['timestamp_scope'])
@@ -531,7 +557,7 @@ class SourceTests(unittest.TestCase):
 
     def test_cursor_skips_subagent_conversation(self):
         self.cursor_database([field(1, 'Delegated task')], {'subagentInfo': {'parentAgentId': 'parent'}})
-        report = collect_cursor(home=self.home)
+        report = self.collect_fixture_cursor()
         self.assertEqual([], report['messages'])
         self.assertEqual(1, report['stats']['excluded_threads'])
 
@@ -539,12 +565,12 @@ class SourceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Truncated'):
             fields(b'\x0a\x05a')
         self.cursor_database([b'\x0a\x05a'])
-        report = collect_cursor(home=self.home)
+        report = self.collect_fixture_cursor()
         self.assertEqual('unsupported', report['status'])
         self.assertEqual([], report['messages'])
 
-    def cursor_ide_database(self, composers, bubbles):
-        root = self.home / 'Library/Application Support/Cursor/User/globalStorage'
+    def cursor_ide_database(self, composers, bubbles, root=None):
+        root = root if root is not None else self.cursor_ide_root
         root.mkdir(parents=True)
         with closing(sqlite3.connect(root / 'state.vscdb')) as connection:
             connection.execute('CREATE TABLE cursorDiskKV (key TEXT PRIMARY KEY,value TEXT)')
@@ -556,6 +582,33 @@ class SourceTests(unittest.TestCase):
                                    ('bubbleId:' + identifier, json.dumps(data)))
             connection.commit()
         return root
+
+    def test_cursor_fixture_selection_ignores_existing_database_from_environment(self):
+        external = tempfile.TemporaryDirectory(prefix='my-voice-decoy-')
+        self.addCleanup(external.cleanup)
+        decoy = Path(external.name) / 'User/globalStorage'
+        self.cursor_ide_database({}, {}, root=decoy)
+        self.assertTrue((decoy / 'state.vscdb').is_file())
+        self.cursor_ide_database({}, {})
+        with patch.dict(os.environ, {'VSCODE_APPDATA': external.name}, clear=True):
+            report = self.collect_fixture_cursor()
+        self.cursor_reader.assert_called_once_with((self.cursor_ide_root / 'state.vscdb').resolve())
+        self.assertEqual('ready', report['status'])
+
+    def test_cursor_ide_discovery_uses_only_synthetic_environment_in_this_test(self):
+        env_roots = {key: self.home / key.lower() for key in (
+            'XDG_CONFIG_HOME', 'APPDATA', 'VSCODE_PORTABLE', 'VSCODE_APPDATA')}
+        suffixes = ('Cursor/User/globalStorage', 'Cursor/User/globalStorage',
+                    'user-data/User/globalStorage', 'User/globalStorage')
+        ide_roots = [self.cursor_ide_root, *(root / suffix for root, suffix in zip(env_roots.values(), suffixes))]
+        for root in ide_roots:
+            self.cursor_ide_database({}, {}, root=root)
+        fixture_env = {key: str(root) for key, root in env_roots.items()}
+        with patch.dict(os.environ, fixture_env, clear=True):
+            report = collect_cursor(home=self.home)
+        self.assertEqual([((root / 'state.vscdb').resolve(),) for root in ide_roots],
+                         [call.args for call in self.cursor_reader.call_args_list])
+        self.assertEqual('ready', report['status'])
 
     def test_cursor_ide_uses_referenced_human_bubbles_and_never_drafts(self):
         headers = [{'bubbleId': identifier, 'type': typ} for identifier, typ in (
@@ -569,7 +622,7 @@ class SourceTests(unittest.TestCase):
             'root:simulation': dict(body, isSimulatedMsg=True), 'root:hidden': dict(body, skipRendering=True),
             'root:plan': dict(body, isPlanExecution=True), 'root:agent': dict(body, sentByAgentId='worker'),
             'root:unreachable': dict(body, text='Detached stale bubble')})
-        report = collect_cursor(home=self.home)
+        report = self.collect_fixture_cursor()
         self.assertEqual('ready', report['status'])
         self.assertEqual(['u'], [m['id'] for m in report['messages']])
         self.assertEqual('cursor_ide_human_bubble', report['messages'][0]['origin']['kind'])
@@ -580,14 +633,14 @@ class SourceTests(unittest.TestCase):
         composer = {'_v': 2, 'composerId': 'root', 'fullConversationHeadersOnly': [
             {'bubbleId': 'u', 'type': 1}, {'bubbleId': 'missing', 'type': 1}]}
         self.cursor_ide_database({'root': composer}, {'root:u': {'type': 1, 'text': 'Readable message'}})
-        report = collect_cursor(home=self.home)
+        report = self.collect_fixture_cursor()
         self.assertEqual('partial', report['status'])
         self.assertEqual(1, report['issues']['missing_ide_bubble'])
         self.assertEqual(1, len(report['messages']))
 
     def test_cursor_ide_unknown_root_format_is_unsupported(self):
         self.cursor_ide_database({'future': {'_v': 'unknown', 'fullConversationHeadersOnly': []}}, {})
-        report = collect_cursor(home=self.home)
+        report = self.collect_fixture_cursor()
         self.assertEqual('unsupported', report['status'])
         self.assertEqual([], report['messages'])
 
@@ -595,7 +648,7 @@ class SourceTests(unittest.TestCase):
         self.cursor_ide_database({'old': {'_v': 1, 'conversation': [
             {'type': 1, 'bubbleId': 'old-user', 'text': 'An older message'},
             {'type': 2, 'bubbleId': 'old-agent', 'text': 'An assistant response'}]}}, {})
-        report = collect_cursor(home=self.home)
+        report = self.collect_fixture_cursor()
         self.assertEqual('ready', report['status'])
         self.assertEqual(['old-user'], [m['id'] for m in report['messages']])
         self.assertIsNone(report['messages'][0]['timestamp'])
@@ -631,7 +684,7 @@ class SourceTests(unittest.TestCase):
     def test_database_permission_denial_is_reported_without_copy_or_retry(self):
         self.cursor_database([field(1, 'Synthetic data')])
         with patch('voice_sources.cursor.readonly_db', side_effect=sqlite3.OperationalError('permission denied')) as reader:
-            report = collect_cursor(home=self.home)
+            report = self.collect_fixture_cursor()
         self.assertEqual('unavailable', report['status'])
         self.assertEqual(1, reader.call_count)
         self.assertEqual([], report['messages'])

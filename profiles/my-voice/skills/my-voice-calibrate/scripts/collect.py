@@ -78,8 +78,10 @@ def source_report(name, path, since, until, *, samples):
             report.messages[-1].update(language=language, genre=genre, purpose=purpose)
 
     result = report.result()
+    if not samples and upstream_reason is not None:
+        result['upstream_reason'] = upstream_reason
     if upstream_status != 'ready':
-        result.update(status=upstream_status, upstream_reason=upstream_reason)
+        result['status'] = upstream_status
         result['reason'] = '; '.join(filter(None, ('upstream_' + upstream_status, result['reason'])))
     return result
 

@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -19,7 +20,8 @@ class CollectTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / 'sessions.json'
             write_output(path, {'text': 'author text'})
-            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            if os.name == 'posix':
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             with self.assertRaises(FileExistsError):
                 write_output(path, {'text': 'replacement'})
             self.assertEqual(json.loads(path.read_text()), {'text': 'author text'})
