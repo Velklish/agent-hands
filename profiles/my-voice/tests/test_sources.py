@@ -586,7 +586,7 @@ class SourceTests(unittest.TestCase):
     def test_cursor_fixture_selection_ignores_existing_database_from_environment(self):
         external = tempfile.TemporaryDirectory(prefix='my-voice-decoy-')
         self.addCleanup(external.cleanup)
-        decoy = Path(external.name) / 'User/globalStorage'
+        decoy = Path(external.name) / 'Cursor/User/globalStorage'
         self.cursor_ide_database({}, {}, root=decoy)
         self.assertTrue((decoy / 'state.vscdb').is_file())
         self.cursor_ide_database({}, {})
@@ -599,7 +599,7 @@ class SourceTests(unittest.TestCase):
         env_roots = {key: self.home / key.lower() for key in (
             'XDG_CONFIG_HOME', 'APPDATA', 'VSCODE_PORTABLE', 'VSCODE_APPDATA')}
         suffixes = ('Cursor/User/globalStorage', 'Cursor/User/globalStorage',
-                    'user-data/User/globalStorage', 'User/globalStorage')
+                    'user-data/User/globalStorage', 'Cursor/User/globalStorage')
         ide_roots = [self.cursor_ide_root, *(root / suffix for root, suffix in zip(env_roots.values(), suffixes))]
         for root in ide_roots:
             self.cursor_ide_database({}, {}, root=root)
