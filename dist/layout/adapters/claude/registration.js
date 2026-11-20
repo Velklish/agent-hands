@@ -33,8 +33,9 @@ function readSettings(text, platform) {
     }
     // Reject duplicate members and lossy numeric conversions before trusting parsed values.
     const tokens = text.match(/"(?:\\.|[^"\\])*"|[^\s]/gs)?.join('');
-    const projected = platform === 'darwin' || (record(doc) && Object.hasOwn(doc, 'enableAllProjectMcpServers'));
-    if (JSON.stringify(doc) !== tokens || !record(doc) || !keys(doc, projected ? macKeys : linuxKeys)
+    const registrationOnly = platform === 'darwin' && record(doc) && keys(doc, ['enabledPlugins', 'extraKnownMarketplaces']);
+    const projected = (platform === 'darwin' && !registrationOnly) || (record(doc) && Object.hasOwn(doc, 'enableAllProjectMcpServers'));
+    if (JSON.stringify(doc) !== tokens || !record(doc) || !keys(doc, registrationOnly ? ['enabledPlugins', 'extraKnownMarketplaces'] : projected ? macKeys : linuxKeys)
         || (projected && (!macKeys.every(k => Object.hasOwn(doc, k)) || doc.enableAllProjectMcpServers !== true || !dictionary(doc.skillOverrides, (k, v) => name(k) && v === 'off')))
         || ('hooks' in doc && !dictionary(doc.hooks, (k, v) => (projected ? Object.hasOwn(macMatchers, k) : k === 'PreToolUse') && Array.isArray(v) && v.every(row => group(row, k, projected))))
         || ('env' in doc && !dictionary(doc.env, (k, v) => /^[A-Z_][A-Z0-9_]*$/.test(k) && typeof v === 'string'))
