@@ -247,7 +247,7 @@ function prepareCompatibleServer(raw: Record<string,unknown>, adapter: LayoutAda
     if (value === undefined) continue;
     if (key === 'tool_timeout_sec' && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)) {
       report({code:'invalid-timeout',server:name,field:key}, `${name}: invalid ${key}`, !adapter.reportsInvalidTimeout);
-    } else if ((command && ['headers','http_headers_helper'].includes(key)) || (url && ['args','env'].includes(key))) dropped.push(key);
+    } else if ((command && ['headers','http_headers_helper'].includes(key)) || (url && ['args','env'].includes(key))) continue;
     else if (serverFields.includes(key)) known[key] = value;
     else dropped.push(key);
   }
