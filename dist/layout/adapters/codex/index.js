@@ -2,7 +2,7 @@ import { readOnlyAgent } from '../../subagents.js';
 import { reportMcpIssues } from '../../adapter.js';
 import { object } from '../../mcp.js';
 import { codexTransportConflicts, renderCodexConfig } from './config.js';
-import { readCodexServerTransports } from './transports.js';
+import { codexServerTransports, readCodexTransportSource } from './transports.js';
 import { isAbsolute } from 'node:path';
 import { tomlQuote, tomlBlock } from '../../toml.js';
 export function transpileCodex(a) {
@@ -30,7 +30,18 @@ export const adapter = {
         if (reference !== undefined) {
             if (!isAbsolute(reference))
                 throw new TypeError('Expected an absolute transport reference path');
-            for (const { name, ours, theirs } of codexTransportConflicts(usable, readCodexServerTransports(reference))) {
+            let transports = new Map();
+            try {
+                const text = readCodexTransportSource(reference);
+                if (text !== null)
+                    transports = codexServerTransports(text);
+                context.watchSource(() => { if (readCodexTransportSource(reference) !== text)
+                    throw new Error(`Stale transport reference: ${reference}`); });
+            }
+            catch {
+                context.report({ code: 'transport-reference-unavailable', path: reference }, 'could not read a valid transport reference');
+            }
+            for (const { name, ours, theirs } of codexTransportConflicts(usable, transports)) {
                 context.report({ code: 'transport-conflict', server: name, reason: `${ours}:${theirs}` }, `${name}: transport conflict (${ours} versus ${theirs})`, true);
             }
         }

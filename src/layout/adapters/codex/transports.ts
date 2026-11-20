@@ -17,11 +17,14 @@ export function codexServerTransports(text: string): Map<string, CodexTransport>
 }
 
 export function readCodexServerTransports(file: string): Map<string, CodexTransport> {
-  let text: string;
-  try { text = readFileSync(file, 'utf8'); }
+  const text = readCodexTransportSource(file);
+  return text === null ? new Map() : codexServerTransports(text);
+}
+
+export function readCodexTransportSource(file: string): string | null {
+  try { return readFileSync(file, 'utf8'); }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return new Map();
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
   }
-  return codexServerTransports(text);
 }

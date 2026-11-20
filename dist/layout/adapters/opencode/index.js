@@ -26,13 +26,14 @@ const target = 'opencode';
 const path = mergedMcpPath.opencode;
 export const adapter = {
     target, skillsDir: '.opencode/skills', agentsDir: '.opencode/agents', ext: 'md',
-    renderAgent: transpileOpencode, configPath: path,
+    renderAgent: transpileOpencode, configPath: path, reportsInvalidTimeout: true,
     agentResets(names) {
-        return { path: '.opencode/opencode.json', key: 'agents', servers: Object.fromEntries(names.map(name => [name, { disabled: true }])) };
+        const entry = { disabled: true };
+        return { path: '.opencode/opencode.json', key: 'agents', entry, servers: Object.fromEntries(names.map(name => [name, entry])) };
     },
     renderMcp(servers, context) {
         const usable = Object.fromEntries(Object.entries(servers).filter(([name, definition]) => {
-            if (!object(definition) || definition.type !== 'sse')
+            if (context.policy.compatibility === 'report' || !object(definition) || definition.type !== 'sse')
                 return true;
             context.report({ code: 'unsupported-transport', server: name, reason: 'sse' }, `${name}: unsupported transport (sse)`);
             return false;

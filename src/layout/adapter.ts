@@ -18,15 +18,17 @@ export interface McpRendering {file: LayoutFile; document?: McpDocument; legacyH
 export interface McpContext {
   policy: LayoutMcpPolicy;
   literal: ReadonlySet<string>;
+  watchSource(check: () => void): void;
   report(diagnostic: Omit<LayoutDiagnostic,'path'|'target'> & {path?: string}, summary: string, fatal?: boolean): void;
 }
 export interface LayoutAdapter {
   target: Target; skillsDir: string; agentsDir: string; ext: string; configPath: string;
   preservesServerSettings?: boolean;
+  reportsInvalidTimeout?: boolean;
   acceptsMcpReference?: boolean;
   renderAgent(agent: AgentDefinition): string;
   renderMcp(servers: Record<string, unknown>, context: McpContext): McpRendering;
-  agentResets?(names: readonly string[]): McpDocument;
+  agentResets?(names: readonly string[]): McpDocument & {entry:unknown};
 }
 
 export function reportMcpIssues(context: McpContext, issues: {

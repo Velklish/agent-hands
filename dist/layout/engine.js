@@ -5,7 +5,7 @@ import { copyEntries, Writer } from './writer.js';
 import { sha256, toPosix } from './fs.js';
 import { SHARED_DIR, validateSkill } from './skills.js';
 import { stageContent } from './content.js';
-import { readRules } from './rule-files.js';
+import { readRule, selectRuleEntries } from './rule-files.js';
 import { mergeMcpServers, object, resolveEnvironment, sameServerConfig, serverHash, valueEnvironmentNames, writeToolRecord } from './mcp.js';
 import { isMergedMcpPath, isTarget, mcpReporter } from './adapter.js';
 import { LayoutMcpError, readMcpPolicy } from './mcp-policy.js';
@@ -53,7 +53,7 @@ function sourceLabel(value) {
     return value;
 }
 export function prepare(value, select) {
-    const input = fields(value, 'layout', ['root', 'target', 'skills', 'sharedDirs', 'servers', 'subagents', 'rules', 'env', 'writeTools', 'supportingFiles', 'scope', 'mcp']);
+    const input = fields(value, 'layout', ['root', 'target', 'skills', 'sharedDirs', 'servers', 'subagents', 'rules', 'rulesMode', 'env', 'writeTools', 'supportingFiles', 'scope', 'mcp']);
     const { root } = input;
     if (typeof root !== 'string' || !path.isAbsolute(root))
         throw new TypeError('Expected an absolute workspace root');
@@ -61,6 +61,9 @@ export function prepare(value, select) {
     const scope = input.scope === undefined ? 'all' : input.scope;
     if (scope !== 'all' && scope !== 'resources' && scope !== 'mcp')
         throw new TypeError('Invalid layout scope');
+    const rulesMode = input.rulesMode === undefined ? 'copy' : input.rulesMode;
+    if (rulesMode !== 'copy' && rulesMode !== 'select')
+        throw new TypeError('Invalid layout rule mode');
     const policy = readMcpPolicy(input.mcp);
     if (policy.mode === 'merge' && !isMergedMcpPath(adapter.configPath, adapter.target))
         throw new TypeError('Target does not support per-key MCP ownership');
@@ -103,10 +106,12 @@ export function prepare(value, select) {
             throw new TypeError(`Invalid tool name for ${name}`);
         return { name, description: raw.description, prompt: raw.prompt, model: raw.model, tools };
     });
-    const rules = scope === 'mcp' ? [] : readRules(stringList(input.rules, 'Expected an array: rules'));
+    const ruleEntries = list(input, 'rules');
+    const rules = scope === 'mcp' ? [] : selectRuleEntries(ruleEntries);
+    const serverEntries = list(input, 'servers');
     const serverNames = new Set();
     const literal = new Set();
-    const definitions = Object.fromEntries((scope === 'resources' ? [] : list(input, 'servers')).flatMap(entry => {
+    const definitions = Object.fromEntries((scope === 'resources' ? [] : serverEntries).flatMap(entry => {
         const raw = fields(entry, 'server', ['name', 'definition', 'source', 'placeholders']);
         if (typeof raw.name !== 'string' || !raw.name.trim())
             throw new TypeError('Expected a server name');
@@ -173,26 +178,31 @@ export function prepare(value, select) {
                     remember(file.rel, path.relative(dest, file.rel), owner);
                 }
             } }, adapter, { skills, sharedDirs, subagents });
-    for (const [index, rule] of rules.entries()) {
-        const digest = sha256(rule.content);
-        stage(`${rulesDir(adapter.target)}/${String(index + 1).padStart(4, '0')}.md`, rule.content);
-        sources.push(() => { if (!lstatSync(rule.file, { throwIfNoEntry: false })?.isFile() || sha256(readFileSync(rule.file)) !== digest)
-            throw new Error(`Stale source: ${rule.file}`); });
-    }
+    if (rulesMode === 'copy')
+        for (const [index, rule] of rules.entries()) {
+            const bytes = readRule(rule.file);
+            const digest = sha256(bytes);
+            const name = `${String(index + 1).padStart(4, '0')}.md`;
+            const rel = `${rulesDir(adapter.target)}/${name}`;
+            const text = bytes.toString('utf8');
+            stage(rel, Buffer.from(text).equals(bytes) ? text : bytes);
+            sources.push(() => { if (!lstatSync(rule.file, { throwIfNoEntry: false })?.isFile() || sha256(readFileSync(rule.file)) !== digest)
+                throw new Error(`Stale source: ${rule.file}`); });
+        }
     for (const { path: rel } of entries.values()) {
         for (let dir = path.posix.dirname(rel); dir !== '.'; dir = path.posix.dirname(dir)) {
             if (entries.has(dir.toLowerCase()))
                 throw new Error(`Output collision: ${dir} is a parent of ${rel}`);
         }
     }
-    const mcp = scope === 'resources' ? undefined : adapter.renderMcp(resolved, { policy, literal, report });
+    const mcp = scope === 'resources' ? undefined : adapter.renderMcp(resolved, { policy, literal, report, watchSource: check => sources.push(check) });
     const files = [...entries.values(), ...(mcp && (!mcp.empty || policy.emitEmpty) ? [mcp.file] : [])];
     const mcpFingerprints = mcp?.document && { path: mcp.document.path, current: hashEntries(mcp.document.servers), ...(mcp.legacyHashes && { legacy: mcp.legacyHashes }) };
     const result = { [planBrand]: true, root, files: files.map(f => ({ ...f, content: typeof f.content === 'string' ? f.content : Buffer.from(f.content) })),
         resources: [...resources.values()], notices, diagnostics: structuredClone(diagnostics), ...(mcpFingerprints && { mcpFingerprints }),
         ...(rules.length ? { rules: rules.map(row => row.file) } : {}), ...(requiredVars.length ? { requiredVars } : {}), ...(writeTools ? { writeTools } : {}) };
     const resets = scope !== 'resources' && policy.resetInheritedAgents ? adapter.agentResets?.(subagents.map(agent => agent.name)) : undefined;
-    applications.set(result, { adapter, root, entries: files, mcp: policy.mode === 'replace' ? undefined : mcp?.document, resets, policy, scope, diagnostics,
+    applications.set(result, { adapter, root, entries: files, mcp: policy.mode === 'replace' ? undefined : mcp?.document, resets, policy, scope, rulesMode, diagnostics,
         checkSources: () => { for (const check of sources)
             check(); } });
     return result;
@@ -205,33 +215,34 @@ function prepareCompatibleServer(raw, adapter, report) {
     sourceLabel(raw.source);
     const value = raw.definition;
     const doc = fields(value, 'definition', object(value) ? Object.keys(value) : []);
+    if (adapter.preservesServerSettings) {
+        return Object.fromEntries(Object.entries(doc).filter(([, value]) => value !== undefined).map(([key, value]) => [key, jsonData(value)]));
+    }
     const command = typeof doc.command === 'string' && !!doc.command.trim();
     const url = typeof doc.url === 'string' && !!doc.url.trim();
     if ((doc.command === undefined || typeof doc.command === 'string') && (doc.url === undefined || typeof doc.url === 'string') && !command && !url) {
         report({ code: 'unsupported-transport', server: name }, `${name}: missing command or url`);
         return undefined;
     }
-    const known = {}, extra = Object.create(null);
+    const known = {};
     const dropped = [];
     for (const [key, value] of Object.entries(doc)) {
         if (value === undefined)
             continue;
         if (key === 'tool_timeout_sec' && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)) {
-            report({ code: 'invalid-timeout', server: name, field: key }, `${name}: invalid ${key}`);
+            report({ code: 'invalid-timeout', server: name, field: key }, `${name}: invalid ${key}`, !adapter.reportsInvalidTimeout);
         }
         else if ((command && ['headers', 'http_headers_helper'].includes(key)) || (url && ['args', 'env'].includes(key)))
             dropped.push(key);
         else if (serverFields.includes(key))
             known[key] = value;
-        else if (adapter.preservesServerSettings)
-            extra[key] = jsonData(value);
         else
             dropped.push(key);
     }
     if (dropped.length)
         report({ code: 'unsupported-fields', server: name, keys: dropped }, `${name}: unsupported fields ${dropped.join(', ')}`);
     const [, definition] = preparedServer({ name, definition: known });
-    return { ...definition, ...extra };
+    return definition;
 }
 function jsonData(value, ancestors = new Set()) {
     if (value === null || typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)))
@@ -320,7 +331,7 @@ export async function applyLayout(plan, previous = { files: {} }, options) {
     const requestedStage = options === undefined ? undefined : fields(options, 'layout apply options', ['stage']).stage;
     if (requestedStage !== undefined && typeof requestedStage !== 'function')
         throw new TypeError('Expected a layout stage callback');
-    const { root, entries, mcp, adapter, scope, policy, resets } = application;
+    const { root, entries, mcp, adapter, scope, rulesMode, policy, resets } = application;
     if (!lstatSync(root, { throwIfNoEntry: false })?.isDirectory())
         throw new Error(`Expected a regular workspace root: ${root}`);
     application.checkSources();
@@ -329,7 +340,13 @@ export async function applyLayout(plan, previous = { files: {} }, options) {
         throw new Error(`Ownership belongs to ${state.target}`);
     if (state.agentResets?.length && !adapter.agentResets)
         throw new Error('Invalid target for inherited agent reset state');
-    const touchedFiles = Object.fromEntries(Object.entries(state.files).filter(([rel]) => scope === 'mcp' ? rel === adapter.configPath : scope === 'resources' ? rel !== adapter.configPath : true));
+    const touchedFiles = Object.fromEntries(Object.entries(state.files).filter(([rel]) => {
+        if (scope === 'mcp')
+            return rel === adapter.configPath;
+        if (scope === 'resources' && rel === adapter.configPath)
+            return false;
+        return rulesMode !== 'select' || !rel.startsWith(`${rulesDir(adapter.target)}/`);
+    }));
     const retainedFiles = Object.fromEntries(Object.entries(state.files).filter(([rel]) => !Object.hasOwn(touchedFiles, rel)));
     if (mcp)
         delete touchedFiles[mcp.path];
@@ -410,7 +427,7 @@ export async function applyLayout(plan, previous = { files: {} }, options) {
         if (!document)
             throw new Error('Invalid inherited agent reset state');
         watch(document.path);
-        const reset = planAgentResets(root, document, state.agentResets ?? []);
+        const reset = planAgentResets(root, document, state.agentResets ?? [], adapter.target);
         nextResets = reset.owned;
         if (reset.content !== undefined) {
             writer.stage(document.path, reset.content, { adopt: true });
@@ -446,20 +463,28 @@ function planMcp(root, mcp, previous, created, policy, target, diagnostics) {
     if (noWork && (!stat || policy.compatibility !== 'report'))
         return null;
     const before = stat ? readFileSync(file, 'utf8') : null;
-    const doc = before === null ? mcp.schema ? { $schema: mcp.schema } : {} : JSON.parse(before);
+    const invalid = (reason) => new LayoutMcpError(`${mcp.path}: ${reason}`, { code: 'invalid-document', target, path: mcp.path, reason });
+    let doc;
+    try {
+        doc = before === null ? mcp.schema ? { $schema: mcp.schema } : {} : JSON.parse(before);
+    }
+    catch {
+        throw policy.compatibility === 'report' ? invalid('invalid JSON') : new SyntaxError(`${mcp.path}: invalid JSON`);
+    }
     if (!object(doc) || (mcp.section && doc[mcp.section] !== undefined && !object(doc[mcp.section])))
-        throw new Error(`${mcp.path}: expected an MCP document`);
+        throw invalid('expected an MCP document');
     const scope = mcp.section ? doc[mcp.section] ?? {} : doc;
     const key = mcp.key;
     const old = scope[key];
     if (old !== undefined && !object(old))
-        throw new Error(`${mcp.path}: expected a server map`);
+        throw invalid('expected a server map');
     if (noWork)
         return null;
     for (const name of previousNames) {
         if (old && Object.hasOwn(old, name) && serverHash(old[name]) !== previous[name]
-            && !(policy.compatibility === 'report' && Object.hasOwn(mcp.servers, name) && sameServerConfig(old[name], mcp.servers[name])))
-            throw new Error(`Edited MCP server: ${name}`);
+            && !(policy.compatibility === 'report' && Object.hasOwn(mcp.servers, name) && sameServerConfig(old[name], mcp.servers[name]))) {
+            throw new LayoutMcpError(`Edited MCP server: ${name}`, { code: 'edited-server', server: name, target, path: mcp.path });
+        }
     }
     const merged = mergeMcpServers(scope, mcp.servers, previousNames, { key, adoptIdentical: policy.unowned === 'adopt-identical' });
     for (const server of merged.kept) {
@@ -477,23 +502,30 @@ function planMcp(root, mcp, previous, created, policy, target, diagnostics) {
     return { hashes: Object.fromEntries(merged.owned.map(name => [name, serverHash(mcp.servers[name])])), changed: !sameServerConfig(next, doc), content,
         created: !stat, remove };
 }
-function planAgentResets(root, document, previous) {
+function planAgentResets(root, document, previous, target) {
     if (!Object.keys(document.servers).length && !previous.length)
         return { owned: [] };
     const file = destination(root, document.path);
     const before = lstatSync(file, { throwIfNoEntry: false }) ? readFileSync(file, 'utf8') : null;
     if (before === null && !Object.keys(document.servers).length)
         return { owned: [] };
-    const input = before === null ? {} : JSON.parse(before);
+    const invalid = (reason) => new LayoutMcpError(`${document.path}: ${reason}`, { code: 'invalid-document', target, path: document.path, reason });
+    let input;
+    try {
+        input = before === null ? {} : JSON.parse(before);
+    }
+    catch {
+        throw invalid('invalid JSON');
+    }
     if (!object(input))
-        throw new Error(`${document.path}: expected a configuration object`);
+        throw invalid('expected a configuration object');
     const old = input[document.key];
     if (old !== undefined && !object(old))
-        throw new Error(`${document.path}: expected an agent map`);
-    const reset = { disabled: true };
+        throw invalid('expected an agent map');
     for (const name of new Set([...previous, ...Object.keys(document.servers)])) {
-        if (old && Object.hasOwn(old, name) && !sameServerConfig(old[name], reset))
-            throw new Error(`${document.path}: edited agent reset: ${name}`);
+        if (old && Object.hasOwn(old, name) && !sameServerConfig(old[name], document.entry)) {
+            throw new LayoutMcpError(`${document.path}: edited agent reset: ${name}`, { code: 'edited-agent-reset', target, path: document.path, server: name });
+        }
     }
     const merged = mergeMcpServers(input, document.servers, previous, { key: document.key });
     if (!Object.keys(merged.servers).length)

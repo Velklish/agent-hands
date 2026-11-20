@@ -1,5 +1,6 @@
 import { type ServerEntry } from './stdio.js';
 import { type ResourceOwner } from './content.js';
+import { type LayoutRule } from './rule-files.js';
 import { type LayoutAdapter, type Target } from './adapter.js';
 import { type LayoutMcpPolicy, type LayoutDiagnostic } from './mcp-policy.js';
 export interface LayoutFile {
@@ -45,7 +46,8 @@ export interface LayoutInput {
         file?: string;
     }[];
     servers: readonly ServerEntry[];
-    rules: readonly string[];
+    rules: readonly LayoutRule[];
+    rulesMode?: 'copy' | 'select';
     env?: Readonly<Record<string, string>>;
     scope?: 'all' | 'resources' | 'mcp';
     mcp?: LayoutMcpPolicy;
