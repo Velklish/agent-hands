@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { readFileSync, realpathSync } from 'node:fs';
+import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { sha256 } from '../../fs.js';
 import { snapshot } from '../../../hooks/hook-journal.js';
@@ -18,6 +18,17 @@ export function plugin(root, settings, input) {
     const relative = path.relative(root, directory);
     if (!relative || relative.startsWith('..' + path.sep) || relative === '..' || path.isAbsolute(relative))
         throw new TypeError('Expected a workspace-local plugin source');
+    const physical = input.expectedPhysicalDirectory;
+    if (physical !== undefined) {
+        if (typeof physical !== 'string' || !path.isAbsolute(physical) || path.normalize(physical) !== physical || !physical.startsWith(home + path.sep))
+            throw new TypeError('Expected a pinned physical source under the selected account home');
+    }
+    const checkSource = () => {
+        if (physical !== undefined && (realpathSync(path.dirname(directory)) !== path.dirname(directory) || !lstatSync(directory).isSymbolicLink() || !lstatSync(physical).isDirectory() || realpathSync(physical) !== physical))
+            throw new Error('Unconfirmed plugin source alias');
+        if (realpathSync(directory) !== (physical ?? directory))
+            throw new Error('Plugin source changed');
+    };
     const files = registrationFiles(root, home);
     const changes = files.map(file => { const before = snapshot(file); return { file, before, after: before }; });
     const read = ([settings, marketplaces, installations]) => ({ settings, marketplaces, installations });
@@ -35,19 +46,20 @@ export function plugin(root, settings, input) {
     receipt.after = JSON.stringify({ plugin, marketplace, directory, fingerprint, version });
     const steps = [];
     if (prior?.fingerprint === fingerprint && current.version === version)
-        return { changes, steps };
+        return { changes, steps, checkSource };
     const binary = realpathSync(input.executable), binarySha256 = sha256(readFileSync(binary));
     const request = { binarySha256, version: '2.1.311 (Claude Code)', platform: process.platform, arch: process.arch, marketplace, plugin, directory, step: 'install' };
     registrationPreflight(request, root, before);
     for (const step of [...(current.marketplace ? [] : ['add']), current.installed ? 'update' : 'install']) {
         const config = { ...request, step }, protectedFiles = [settings.file, ...files.slice(0, 2)];
         steps.push({ files: protectedFiles, retain: files.slice(0, 2), run: () => {
-                if (realpathSync(directory) !== directory || sha256(readFileSync(binary)) !== binarySha256)
-                    throw new Error('Plugin source or binary changed');
+                checkSource();
+                if (sha256(readFileSync(binary)) !== binarySha256)
+                    throw new Error('Plugin binary changed');
                 const args = step === 'add' ? ['marketplace', 'add', directory] : [step, `${plugin}@${marketplace}`];
                 const result = spawnSync(binary, ['plugin', ...args, '--scope', 'project'], { cwd: root, timeout: 120000, stdio: 'ignore', env: { HOME: home, CLAUDE_CONFIG_DIR: path.join(home, '.claude'), PATH: process.env.PATH, DISABLE_AUTOUPDATER: '1', DISABLE_TELEMETRY: '1' } });
                 return result.status;
-            }, verify: (a, b, exit) => registrationEvidence(config, root, version, read(a), read(b), exit, destination(version)), verifyFailure: (a, b) => registrationUnchanged(config, read(a), read(b)) });
+            }, verify: (a, b, exit) => { checkSource(); return registrationEvidence(config, root, version, read(a), read(b), exit, destination(version)); }, verifyFailure: (a, b) => registrationUnchanged(config, read(a), read(b)) });
     }
-    return { changes, steps };
+    return { changes, steps, checkSource };
 }

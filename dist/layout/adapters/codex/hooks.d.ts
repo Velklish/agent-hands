@@ -12,6 +12,7 @@ export declare const hooks: {
     plugin?: ((root: string, settings: import("../../../hooks/hook-journal.js").TargetChange, input: import("../../../index.js").WorkspaceRegistration) => {
         changes: import("../../../hooks/hook-journal.js").TargetChange[];
         steps: import("../../../hooks/hook-operation.js").ExternalHookChange[];
+        checkSource: () => void;
     }) | undefined;
     registrationFiles?: ((root: string, home: string) => string[]) | undefined;
     accepts: (shell: import("../../../hooks/format.js").Fields) => boolean;

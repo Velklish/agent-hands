@@ -9,4 +9,5 @@ export declare function plugin(root: string, settings: TargetChange, input: Work
         after: string | null;
     }[];
     steps: ExternalHookChange[];
+    checkSource: () => void;
 };

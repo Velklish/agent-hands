@@ -12,6 +12,7 @@ export interface HookFormat {
     plugin?(root: string, settings: TargetChange, input: WorkspaceRegistration): {
         changes: TargetChange[];
         steps: ExternalHookChange[];
+        checkSource: () => void;
     };
     registrationFiles?(root: string, home: string): string[];
     path: string;
