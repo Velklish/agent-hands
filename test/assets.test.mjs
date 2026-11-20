@@ -19,7 +19,7 @@ test('links: nested paths, titles, references, anchors, lists, fences, inline co
  ].join('\n'));const ok=put(dir,'ok.md','ok'),space=put(dir,'has space.md','ok');assert.deepEqual(relativeLinks(f),['../ok.md','missing.md','../has space.md','not here.md','resumed','visible','adjacent','unmatched','../ok.md','missing.md']);assert.deepEqual(brokenLinks(f,new Set([ok,space,f])),['missing.md','not here.md','resumed','visible','adjacent','unmatched','missing.md']);
 });
 test('archive contains working README example, ordered rules and discoverable skill metadata',t=>{
- const dir=scratch(t);const [{filename}]=JSON.parse(execFileSync('npm',['pack','--ignore-scripts','--json','--pack-destination',dir],{encoding:'utf8'}));execFileSync('tar',['-xzf',path.join(dir,filename),'-C',dir]);const pkg=path.join(dir,'package');inspect(path.join(pkg,'assets'));
+ const dir=scratch(t);const [{filename}]=JSON.parse(execFileSync('npm',['pack','--ignore-scripts','--json','--pack-destination',dir,'--cache',path.join(dir,'cache')],{encoding:'utf8'}));execFileSync('tar',['-xzf',path.join(dir,filename),'-C',dir]);const pkg=path.join(dir,'package');inspect(path.join(pkg,'assets'));
  const readme=path.join(pkg,'README.md');
  const shipped=new Set(files(pkg));
  const checkReadme=()=>assert.deepEqual(brokenLinks(readme,shipped),[],'broken archive README links');

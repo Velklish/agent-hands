@@ -1,5 +1,15 @@
 # Workspace command hooks
 
+## From the CLI
+
+Use the same JSON file with `hooks-plan`, `hooks-apply`, `hooks-inspect` and `hooks-recover`. Pass it with `--config FILE`. For one target, use the JavaScript example's `input` as JSON. For several targets, use a single `root` and a `selections` array with one entry per target. The [bundled example](../../examples/hooks.mjs) writes a complete batch file.
+
+`hooks-plan` and `hooks-apply` report `changed` and `shifted`. The CLI derives native paths and ownership files from the root and selected harnesses. `hooks-inspect` reports pending targets and whether registration was involved. With no pending operation, it reports the count of owned and released callbacks per target, or `null` when a target has no receipt. Command strings, settings and owner identifiers are omitted from CLI output.
+
+If inspection shows a pending operation, use `hooks-recover` with the same workspace root and original target selection. Include the original registration account if the operation used native registration. Recovery reports whether an operation was recovered. A transaction created with an external participant requires recovery through the JavaScript API and the original participant.
+
+## From JavaScript
+
 Import the hook operations from `agent-hands`. Select `claude`, `codex` or `cursor`. OpenCode uses a plugin lifecycle and does not support this command-hook operation. Layout delivery does not enable hooks.
 
 ```js

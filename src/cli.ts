@@ -1,10 +1,14 @@
 import { closeSync, lstatSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { parseLayout, readLayoutState, applyLayout, runRepositoryCommand, type LayoutPlan, type NavigationOptions } from 'agent-hands';
+import { parseLayout, readLayoutState, applyLayout, runRepositoryCommand, type LayoutPlan, type NavigationOptions,
+  planWorkspaceHooks, applyWorkspaceHooks, inspectWorkspaceHookOperation, inspectWorkspaceHookOwnership, recoverWorkspaceHooks,
+  type WorkspaceHookBatch, type WorkspaceHookInput, type WorkspaceHookScope } from 'agent-hands';
 
 const usage = `agent-hands <plan|apply|path|clone|fresh|zone> --config FILE [--state FILE] [TARGET]
+agent-hands <hooks-plan|hooks-apply|hooks-inspect|hooks-recover> --config FILE
 plan previews paths; apply requires a trusted state file outside the workspace.
+Hook commands use the same single-target or batch configuration.
 path and zone are local reads; clone and fresh explicitly contact remotes.`;
 const json = (file: string): unknown => JSON.parse(readFileSync(file, 'utf8'));
 function record(value: unknown): value is Record<string, unknown> {
@@ -55,9 +59,82 @@ async function apply(plan: LayoutPlan, file: string, config: string) {
     if (!committed) unlinkSync(lock);
   }
 }
+type HookCommand = 'hooks-plan' | 'hooks-apply' | 'hooks-inspect' | 'hooks-recover';
+type HookTarget = Exclude<WorkspaceHookScope['target'], 'opencode'>;
+class HookCliError extends Error {}
+
+function hookConfig(file: string) {
+  let input: unknown;
+  try { input = json(file); } catch { throw new HookCliError('Cannot read hook configuration as JSON'); }
+  if (!record(input) || typeof input.root !== 'string' || !path.isAbsolute(input.root))
+    throw new HookCliError('Hook configuration requires an absolute workspace root');
+  const selections = 'selections' in input ? input.selections : [input];
+  if (!Array.isArray(selections) || !selections.length)
+    throw new HookCliError('Expected at least one hook selection');
+  let accountHome: string | undefined;
+  const targets: HookTarget[] = selections.map(selection => {
+    if (!record(selection)) throw new HookCliError('Expected a hook selection object');
+    const {target, registration} = selection;
+    if (target === 'opencode') throw new HookCliError('OpenCode uses plugins and does not support command hooks');
+    if (target !== 'claude' && target !== 'codex' && target !== 'cursor')
+      throw new HookCliError('Select Claude Code, Codex or Cursor for command hooks');
+    if (registration !== undefined) {
+      if (target !== 'claude' || !record(registration) ||
+          typeof registration.accountHome !== 'string' || !path.isAbsolute(registration.accountHome))
+        throw new HookCliError('Claude Code plugin registration requires an absolute account home');
+      accountHome = registration.accountHome;
+    }
+    return target;
+  });
+  if (new Set(targets).size !== targets.length) throw new HookCliError('Expected distinct hook targets');
+  // The public operations validate the desired hook definitions before planning or writing.
+  return {input: input as unknown as WorkspaceHookInput | WorkspaceHookBatch, targets, accountHome};
+}
+
+function runHookCommand(command: HookCommand, args: string[]) {
+  const options = {config:{type:'string'}} as const;
+  const {values} = (() => {
+    try { return parseArgs({args, options}); }
+    catch { throw new HookCliError(usage); }
+  })();
+  if (!values.config) throw new HookCliError(usage);
+  const {input, targets, accountHome} = hookConfig(values.config);
+  if (command === 'hooks-plan') return planWorkspaceHooks(input);
+  if (command === 'hooks-apply') return applyWorkspaceHooks(input);
+
+  const {root} = input;
+  const pending = inspectWorkspaceHookOperation({root, accountHome});
+  if (command === 'hooks-inspect') {
+    if (pending.pending) return pending;
+    const ownership = targets.map(target => {
+      const receipt = inspectWorkspaceHookOwnership({root, target});
+      return {target, ownership: receipt && {owners: receipt.owners.length, released: receipt.released.length}};
+    });
+    return {...pending, ownership};
+  }
+
+  if (!pending.pending) return {recovered:false};
+  if (pending.registration !== Boolean(accountHome) ||
+      pending.targets.length !== targets.length || !pending.targets.every(target => targets.some(selected => selected === target)))
+    throw new HookCliError('Recovery requires the original hook targets and registration account. See hooks-inspect.');
+  recoverWorkspaceHooks({root, targets, accountHome});
+  return {recovered:true};
+}
+
 async function main() {
   const [command,...args] = process.argv.slice(2);
   if (command === '--help' || command === 'help') { console.log(usage); return 0; }
+  if (command === 'hooks-plan' || command === 'hooks-apply' || command === 'hooks-inspect' || command === 'hooks-recover') {
+    try {
+      console.log(JSON.stringify(runHookCommand(command,args)));
+      return 0;
+    } catch (error) {
+      // Adapter and I/O errors can contain user-supplied commands, settings, or paths.
+      console.error(error instanceof HookCliError ? error.message :
+        `${command} failed. Check the configuration and workspace state. Use hooks-inspect to check for a pending operation.`);
+      return 1;
+    }
+  }
   const {values,positionals} = parseArgs({args,allowPositionals:true,options:{config:{type:'string'},state:{type:'string'}}});
   if (!values.config || !command) throw Error(usage);
   const cfg = json(values.config);

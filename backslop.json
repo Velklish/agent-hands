@@ -4,7 +4,12 @@
   "cli": "npx --no-install backslop",
   "source": "https://github.com/Velklish/backslop.git",
   "gates": [
-    "npx --no-install backslop lint"
+    "npx --no-install backslop lint",
+    "npm run typecheck && npm run test:layout:types",
+    "npm run check:dist",
+    "npm run test:public",
+    "npm run test:mutations",
+    "npm run test:package"
   ],
   "version": "1.0.0",
   "lang": "en",

@@ -1,6 +1,6 @@
 # Reference
 
-How agent-hands works today — from the code, not intention. Intent and rationale are in [ADRs](../README.md); this reference describes only the behaviour of the running version. It is organised by subsystem so each file can be edited independently. The “Scope” field of tasks links here.
+This reference describes the running version by subsystem. Start with the [package guide](../../README.md) for installation and examples.
 
 | Section | About |
 |---|---|

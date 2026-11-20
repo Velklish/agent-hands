@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Plan and apply command hooks across selected harnesses with explicit enablement, callback ownership, native registration checks and recoverable batch transactions.
+- Run hook planning, application, inspection and recovery from the installed CLI with an explicit configuration and redacted diagnostics.
 
 - Set up package metadata and the MIT license.
 - Add a pinned English Backslop workflow and the first development milestones.
