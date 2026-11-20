@@ -15,7 +15,7 @@ export function ensureWorkspaceDirs(root: string) {
   for (const name of WORKSPACE_DIRS) mkdirSync(path.join(root, name), { recursive: true });
 }
 
-export type NavigationProblem = { code: 'empty' | 'search-disabled' | 'search-unavailable' | 'not-found' | 'other' }
+export type NavigationProblem = { code: 'empty' | 'search-disabled' | 'search-unavailable' | 'invalid-search' | 'not-found' | 'other' }
   | { code: 'ambiguous'; source: 'local' | 'remote' }
   | { code: 'reserved' | 'outside-zones' | 'unsafe-namespace' | 'not-checkout'; abs: string; exists: boolean }
   | { code: 'enclosing-repo'; abs: string; top: string; zone: typeof WORKSPACE_DIRS[number] };
@@ -79,6 +79,20 @@ export function checkOrigin(abs: string, url: string, routeHost: RouteHost, { al
 }
 
 interface RemoteCandidate extends Candidate { url: string }
+
+function remoteCandidates(result: unknown): RemoteCandidate[] | null {
+  if (result === null) return null;
+  const valid = (value: unknown): value is RemoteCandidate => {
+    if (!value || typeof value !== 'object') return false;
+    const { nsPath, url, kind, personal } = value as Partial<RemoteCandidate>;
+    return typeof nsPath === 'string' && !!nsPath && typeof url === 'string' && isUrl(url)
+      && typeof kind === 'string' && !!kind && (personal === undefined || typeof personal === 'boolean');
+  };
+  if (!Array.isArray(result) || !Array.from(result).every(valid)) {
+    throw new NavigationError('Remote search returned an invalid candidate list', [], { code: 'invalid-search' });
+  }
+  return result;
+}
 export interface NavigationOptions {
   root?: string; cwd?: string; routeHost: RouteHost;
   search?: (name: string) => Promise<RemoteCandidate[] | null>;
@@ -131,7 +145,7 @@ export function createNavigation({ root: explicitRoot, cwd = process.cwd(), rout
     if (local.status === 'RESOLVED') return { ...fromNs(local.nsPath, 'disk'), kind: local.kind };
     if (local.status === 'AMBIGUOUS') throw new NavigationError(`Repository name is ambiguous on disk: ${target}`, local.candidates, { code: 'ambiguous', source: 'local' });
     if (!search) throw new NavigationError(`No local match for ${target}; remote search is not configured. Specify a repository URL.`, [], { code: 'search-disabled' });
-    const hits = await search(target);
+    const hits = remoteCandidates(await search(target));
     if (!hits) throw new NavigationError(`Remote search is unavailable for ${target}; specify a repository URL.`, [], { code: 'search-unavailable' });
     if (hits.length > 1) throw new NavigationError(`Repository name is ambiguous remotely: ${target}`, hits, { code: 'ambiguous', source: 'remote' });
     if (hits.length === 1) {
@@ -174,8 +188,7 @@ export function createNavigation({ root: explicitRoot, cwd = process.cwd(), rout
       return { abs, state: null };
     }
     if (url) checkOrigin(abs, url, routeHost);
-    const top = gitToplevel(abs);
-    if (!top || realpathSync(top) !== realpathSync(abs)) throw new NavigationError(`Not a clone root: ${abs}`);
+    verifyCheckoutRoot(abs);
     return { abs, state: fresh ? freshenRepo(abs) : null };
   }
   async function fresh(target?: string) {
@@ -201,12 +214,21 @@ export function createNavigation({ root: explicitRoot, cwd = process.cwd(), rout
     if (zone) throw new NavigationError(`Not inside a Git clone: ${abs}`, [], { code: 'enclosing-repo', abs, top, zone });
     return { abs: top };
   }
+  function verifyCheckoutRoot(target: string): CheckoutLocation {
+    const abs = path.resolve(cwd, target);
+    const top = gitToplevel(abs);
+    const canonical = realPath(abs);
+    if (!top || !canonical || canonical !== realPath(top)) {
+      throw new NavigationError(`Not a clone root: ${abs}`, [], { code: 'not-checkout', abs, exists: isDirectory(abs) });
+    }
+    return { abs };
+  }
   function freshFromDisk(abs: string) {
     const located = locateCheckout(abs);
     return { ...located, state: freshenRepo(located.abs) };
   }
   const verifyOrigin = (abs: string, url: string, options?: Parameters<typeof checkOrigin>[3]) => checkOrigin(abs, url, routeHost, options);
-  return { resolve, clone, repoPath, fresh, locateCheckout, verifyOrigin, scan: (namespaces?: readonly string[]) => scanZone(root, namespaces) };
+  return { resolve, clone, repoPath, fresh, locateCheckout, verifyCheckoutRoot, verifyOrigin, scan: (namespaces?: readonly string[]) => scanZone(root, namespaces) };
 }
 
 export const REPOSITORY_HELP = 'clone <name|namespace|URL> | path <name|path|URL> [--clone] [--fresh] | fresh [name|path] | zone';

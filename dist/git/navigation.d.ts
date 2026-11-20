@@ -6,7 +6,7 @@ export { discoverRoot, WORKSPACE_DIRS };
 export type { RouteHost };
 export declare function ensureWorkspaceDirs(root: string): void;
 export type NavigationProblem = {
-    code: 'empty' | 'search-disabled' | 'search-unavailable' | 'not-found' | 'other';
+    code: 'empty' | 'search-disabled' | 'search-unavailable' | 'invalid-search' | 'not-found' | 'other';
 } | {
     code: 'ambiguous';
     source: 'local' | 'remote';
@@ -92,6 +92,7 @@ export declare function createNavigation({ root: explicitRoot, cwd, routeHost, s
         abs: string;
     }>;
     locateCheckout: (target?: string) => CheckoutLocation;
+    verifyCheckoutRoot: (target: string) => CheckoutLocation;
     verifyOrigin: (abs: string, url: string, options?: Parameters<typeof checkOrigin>[3]) => void;
     scan: (namespaces?: readonly string[]) => Promise<import("./state.js").ZoneState[]>;
 };

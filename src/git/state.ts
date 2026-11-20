@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { GIT_LOCAL_TIMEOUT_MS, GIT_MAX_OUTPUT } from './process.js';
-import { listClonedRepos, repoAbsPath } from './layout.js';
+import { isCloneDir, listClonedRepos, repoAbsPath } from './layout.js';
 import { DEFAULT_BRANCH_FALLBACK, branchOfOriginRef } from './fresh.js';
 
 const english = {
@@ -172,11 +172,16 @@ async function defaultOf(repoAbs: string, originHead: GitResult) {
 
 async function inspect(root: string, repo: string): Promise<ZoneState> {
   const abs = repoAbsPath(root, repo);
-  const [originHead, status, gitDir] = await Promise.all([
+  const unreadable = (issue: StatusIssue): ZoneState => ({ repo, default: null, ...parseStatus({ ok: false, issue }), contact: lastContact(path.join(abs, '.git')) });
+  if (!isCloneDir(abs)) return unreadable({ code: 'not-root', dir: abs });
+  const [top, originHead, status, gitDir] = await Promise.all([
+    git(abs, 'rev-parse', '--path-format=absolute', '--show-toplevel'),
     git(abs, 'symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'),
     git(abs, '--no-optional-locks', 'status', '--porcelain=v2', '--branch'),
     commonGitDir(abs),
   ]);
+  if (!top.ok) return unreadable(top.issue);
+  if (!samePath(top.out, abs)) return unreadable({ code: 'not-root', dir: abs });
   const def = await defaultOf(abs, originHead);
   const st = parseStatus(status);
   if (st.ahead === null && st.branch !== null) {
