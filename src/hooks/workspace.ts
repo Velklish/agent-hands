@@ -6,7 +6,8 @@ import { inspectHookOwnership, prepareHookDocument } from './hook-delivery.js';
 import { assertHookOperationIdle, commitHookOperation, commitWithParticipant, findHookOperation, recoverWithParticipant, recoverHookOperation, withAccountLock, type ExternalHookChange, type WorkspaceParticipant } from './hook-operation.js';
 import { snapshot } from './hook-journal.js';
 import { sha256 } from '../layout/fs.js';
-import type { WorkspaceHookDiagnostic, WorkspacePreferences, WorkspaceRegistration, WorkspaceRegistrationPlan, WorkspaceRegistrationOutcome } from './options.js';
+import type { WorkspaceHookDiagnostic, WorkspacePreferences, WorkspaceRegistration, WorkspaceRegistrationPlan, WorkspaceRegistrationOutcome,
+  WorkspaceRegistrationInspection, WorkspaceRegistrationStatus } from './options.js';
 
 export interface WorkspaceHook { owner: string; event: string; command: string; matcher?: string; timeout?: number }
 export interface WorkspaceHookScope { root: string; target: Target }
@@ -155,6 +156,15 @@ export function inspectWorkspaceHookOwnership(input:WorkspaceHookScope) {
   const {scope,target,document,state} = locations(input);
   assertHookOperationIdle(scope);
   return inspectHookOwnership({target,document,state});
+}
+export function inspectWorkspaceRegistration(input:WorkspaceRegistrationInspection):WorkspaceRegistrationStatus {
+  if (!path.isAbsolute(input.root)) throw new TypeError('Absolute workspace path required');
+  const root = realpathSync(input.root);
+  const accountHome = canonicalAccountHome(input.accountHome);
+  if (!accountHome) throw new TypeError('Absolute hook account home required');
+  const operation = inspectWorkspaceHookOperation({root,accountHome});
+  if (operation.pending || operation.blockedBy) return {status:'stale'};
+  return format('claude').inspectProjectRegistration!({...input,root,accountHome});
 }
 export type PendingWorkspaceHooks = {pending:false;registration:false;blockedBy?:'another-project'} |
   {pending:true;registration:boolean;targets:Target[];accountScoped?:true};

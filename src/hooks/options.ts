@@ -28,3 +28,16 @@ export interface WorkspaceRegistrationPlan {
 export interface WorkspaceRegistrationOutcome extends Omit<WorkspaceRegistrationPlan, 'action'> {
   status: 'installed' | 'updated' | 'current';
 }
+export interface WorkspaceRegistrationInspection {
+  root: string;
+  accountHome: string;
+  marketplace: string;
+  plugin: string;
+  expectedVersion?: string;
+  expectedFingerprint?: string;
+}
+export type WorkspaceRegistrationStatus =
+  | { status:'missing' }
+  | { status:'retained'; scope:'project'; version:string }
+  | { status:'current'; scope:'project'; version:string; fingerprint:string }
+  | { status:'stale'; scope?:'project'; version?:string; fingerprint?:string };

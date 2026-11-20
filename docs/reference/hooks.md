@@ -54,6 +54,13 @@ The package journals the operation before staging and records the decision befor
 
 ## Project preferences and registration
 
+Use `inspectWorkspaceRegistration({root, accountHome, marketplace, plugin})` to verify the
+project registration against its native registry and package receipt. A current result includes
+project scope, installed version and confirmed fingerprint. A retained registration has a matching
+project entry with no package receipt. A missing result means there is no matching project entry or
+receipt. Mismatched evidence or an unfinished operation reports stale. Supply `expectedVersion`
+and `expectedFingerprint` to check a known desired registration against verified evidence.
+
 The Claude adapter can compose `preferences` with hook changes in the same settings document: `enableProjectServers`, `disabledSkills`, `enabledPlugins` and `localMarketplaces`. It tracks individual acquired entries and preserves unrelated values. When a requested preference differs from an unowned value, plan and apply return a `preference-conflict` diagnostic naming the preference field. Conflicting values and entry names are omitted. Omitting preferences leaves them alone; `{}` retires previously acquired entries. A legacy preferences claim applies only against the confirmed document snapshot.
 
 Retiring preferences removes an empty dictionary only when the receipt proves the package created it and the previous settings bytes still match. Pre-existing dictionaries and containers with only legacy field-level evidence are preserved. When the package created the whole settings file and no values remain, retirement removes the file as well.

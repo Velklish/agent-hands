@@ -117,11 +117,14 @@ export function inspectRegistration(request, project, before) {
     if (matching.length > 1)
         throw new Error('Ambiguous project installation');
     const source = markets[request.marketplace];
-    if (source !== undefined && (!record(source) || source.installLocation !== request.directory || !isDeepStrictEqual(source.source, { source: 'directory', path: request.directory })))
+    const directory = record(source) ? source.installLocation : undefined;
+    if (source !== undefined && (!record(source) || typeof directory !== 'string' || !directory.startsWith('/') ||
+        (request.directory !== undefined && directory !== request.directory) ||
+        !isDeepStrictEqual(source.source, { source: 'directory', path: directory })))
         throw new Error('Conflicting registered marketplace');
     if (matching.length && source === undefined)
         throw new Error('Incomplete project registration');
-    return { marketplace: source !== undefined, installed: matching.length === 1, version: matching[0]?.version, installPath: matching[0]?.installPath };
+    return { marketplace: source !== undefined, directory, installed: matching.length === 1, version: matching[0]?.version, installPath: matching[0]?.installPath };
 }
 function registry(raw) {
     if (raw === null)

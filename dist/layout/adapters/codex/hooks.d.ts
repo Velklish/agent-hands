@@ -18,6 +18,7 @@ export declare const hooks: {
     }) | undefined;
     registrationFiles?: ((root: string, home: string) => string[]) | undefined;
     registrationPath?: ((root: string) => string) | undefined;
+    inspectProjectRegistration?: ((input: import("../../../index.js").WorkspaceRegistrationInspection) => import("../../../index.js").WorkspaceRegistrationStatus) | undefined;
     accepts: (shell: import("../../../hooks/format.js").Fields) => boolean;
     groupIndices: (list: unknown[], owned: ReadonlySet<number>) => number[];
     grouped: boolean;

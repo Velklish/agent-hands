@@ -18,12 +18,16 @@ export interface RegistrationSnapshot {
 export declare function registrationUnchanged(request: RegistrationRequest, before: RegistrationSnapshot, after: RegistrationSnapshot): boolean;
 export declare function registrationPreflight(request: RegistrationRequest, project: string, before: RegistrationSnapshot): {
     marketplace: boolean;
+    directory: unknown;
     installed: boolean;
     version: unknown;
     installPath: unknown;
 };
-export declare function inspectRegistration(request: Pick<RegistrationRequest, 'marketplace' | 'plugin' | 'directory'>, project: string, before: RegistrationSnapshot): {
+export declare function inspectRegistration(request: Pick<RegistrationRequest, 'marketplace' | 'plugin'> & {
+    directory?: string;
+}, project: string, before: RegistrationSnapshot): {
     marketplace: boolean;
+    directory: unknown;
     installed: boolean;
     version: unknown;
     installPath: unknown;

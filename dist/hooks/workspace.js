@@ -157,6 +157,18 @@ export function inspectWorkspaceHookOwnership(input) {
     assertHookOperationIdle(scope);
     return inspectHookOwnership({ target, document, state });
 }
+export function inspectWorkspaceRegistration(input) {
+    if (!path.isAbsolute(input.root))
+        throw new TypeError('Absolute workspace path required');
+    const root = realpathSync(input.root);
+    const accountHome = canonicalAccountHome(input.accountHome);
+    if (!accountHome)
+        throw new TypeError('Absolute hook account home required');
+    const operation = inspectWorkspaceHookOperation({ root, accountHome });
+    if (operation.pending || operation.blockedBy)
+        return { status: 'stale' };
+    return format('claude').inspectProjectRegistration({ ...input, root, accountHome });
+}
 export function inspectWorkspaceHookOperation({ root, accountHome }) {
     if (!path.isAbsolute(root))
         throw new TypeError('Absolute workspace path required');

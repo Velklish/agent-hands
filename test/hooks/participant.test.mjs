@@ -6,7 +6,8 @@ import os from 'node:os';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { scratch, put } from '../fixtures.mjs';
-import { applyWorkspaceHooks, applyPreparedWorkspaceHooks, prepareWorkspaceHooks, recoverWorkspaceHooks, inspectWorkspaceHookOperation } from 'agent-hands';
+import { applyWorkspaceHooks, applyPreparedWorkspaceHooks, prepareWorkspaceHooks, recoverWorkspaceHooks, inspectWorkspaceHookOperation,
+  inspectWorkspaceRegistration } from 'agent-hands';
 
 const file = fileURLToPath(import.meta.url);
 function participant(root,crash) {
@@ -68,7 +69,12 @@ if (!process.argv[2]) test('explicit account lock is shared with workspace regis
   const installed = write(home,'.claude/plugins/installed_plugins.json',{version:2,plugins:{[`${plugin}@${marketplace}`]:[
     {scope:'project',projectPath:root,version,installPath:path.join(home,'.claude/plugins/cache',marketplace,plugin,version)},
   ]}});
+  const identity = {root,accountHome:home,marketplace,plugin};
+  assert.deepEqual(inspectWorkspaceRegistration({...identity,plugin:'unrelated'}),{status:'missing'});
+  assert.deepEqual(inspectWorkspaceRegistration(identity),{status:'retained',scope:'project',version});
   write(root,'.agent-hands/hooks/claude/registration.json',{plugin,marketplace,directory,fingerprint,version});
+  assert.deepEqual(inspectWorkspaceRegistration(identity),{status:'current',scope:'project',version,fingerprint});
+  assert.deepEqual(inspectWorkspaceRegistration({...identity,expectedVersion:'1.0.1'}),{status:'stale',scope:'project',version,fingerprint});
   const settings = write(root,'.claude/settings.json',{env:{FOREIGN:'preserve'}});
   const project = {root,selections:[{target:'claude',enabled:true,hooks:[],registration}]};
   assert.throws(() => prepareWorkspaceHooks({...project,accountHome:root}),/does not match the batch account/);

@@ -106,7 +106,7 @@ export function registrationPreflight(request: RegistrationRequest, project: str
   return inspectRegistration(request,project,before);
 }
 
-export function inspectRegistration(request: Pick<RegistrationRequest,'marketplace'|'plugin'|'directory'>, project: string, before: RegistrationSnapshot) {
+export function inspectRegistration(request: Pick<RegistrationRequest,'marketplace'|'plugin'> & {directory?:string}, project: string, before: RegistrationSnapshot) {
   const markets = registry(before.marketplaces);
   const installs = registry(before.installations);
   if (before.installations !== null && (!keys(installs,['version','plugins']) || installs.version !== 2 || !record(installs.plugins))) throw new Error('Unsupported installation registry');
@@ -115,9 +115,12 @@ export function inspectRegistration(request: Pick<RegistrationRequest,'marketpla
   const matching = rows.filter(row => row.scope === 'project' && row.projectPath === project);
   if (matching.length > 1) throw new Error('Ambiguous project installation');
   const source = markets[request.marketplace];
-  if (source !== undefined && (!record(source) || source.installLocation !== request.directory || !isDeepStrictEqual(source.source,{ source:'directory',path:request.directory }))) throw new Error('Conflicting registered marketplace');
+  const directory = record(source) ? source.installLocation : undefined;
+  if (source !== undefined && (!record(source) || typeof directory !== 'string' || !directory.startsWith('/') ||
+      (request.directory !== undefined && directory !== request.directory) ||
+      !isDeepStrictEqual(source.source,{source:'directory',path:directory}))) throw new Error('Conflicting registered marketplace');
   if (matching.length && source === undefined) throw new Error('Incomplete project registration');
-  return { marketplace:source !== undefined, installed:matching.length === 1, version:matching[0]?.version, installPath:matching[0]?.installPath };
+  return { marketplace:source !== undefined, directory, installed:matching.length === 1, version:matching[0]?.version, installPath:matching[0]?.installPath };
 }
 
 function registry(raw: string | null): Fields {
