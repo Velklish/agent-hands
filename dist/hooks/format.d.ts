@@ -5,7 +5,7 @@ import type { ExternalHookChange } from './hook-operation.js';
 export type Fields = Record<string, unknown>;
 export interface HookFormat {
     preferences?(root: string, wanted: WorkspacePreferences, legacy?: WorkspacePreferences): {
-        projectDocument: (text: string | null) => string | null;
+        projectDocument: (text: string | null, original: string | null) => string | null;
         change: () => TargetChange;
     };
     preferencePath?(root: string): string;

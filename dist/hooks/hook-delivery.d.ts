@@ -14,7 +14,7 @@ export interface ManagedHooks {
         readonly document: string;
         readonly entries: readonly HookEntry[];
     };
-    readonly projectDocument?: (text: string | null) => string | null;
+    readonly projectDocument?: (text: string | null, original: string | null) => string | null;
 }
 export declare function confirmedHookIntents(spec: Pick<ManagedHooks, 'target' | 'document' | 'state'>): HookEntry[];
 export declare function inspectHookOwnership(spec: Pick<ManagedHooks, 'target' | 'document' | 'state'>): {

@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
+import { sha256 } from '../../fs.js';
 import { snapshot } from '../../../hooks/hook-journal.js';
 const dict = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const keys = ['enableAllProjectMcpServers', 'extraKnownMarketplaces', 'enabledPlugins', 'skillOverrides'];
@@ -36,11 +37,18 @@ function fields(wanted) {
 export function preferencePath(root) { return path.join(root, '.agent-hands/hooks/claude/preferences.json'); }
 export function preferences(root, wanted, legacy) {
     const file = preferencePath(root), before = snapshot(file);
-    const previous = before === null ? fields(legacy ?? {}) : JSON.parse(before);
+    const saved = before === null ? fields(legacy ?? {}) : JSON.parse(before);
+    const receipt = dict(saved) && Object.hasOwn(saved, 'version') ? saved : null;
+    if (receipt && (receipt.version !== 2 || Object.keys(receipt).length !== 4 || typeof receipt.digest !== 'string' || !/^[a-f0-9]{64}$/.test(receipt.digest) || !Array.isArray(receipt.containers) || receipt.containers.some(k => !keys.slice(1).includes(k)) || new Set(receipt.containers).size !== receipt.containers.length))
+        throw new Error('Invalid preference structure ownership');
+    const previous = receipt ? receipt.fields : saved;
     if (!dict(previous) || Object.keys(previous).some(k => !keys.includes(k)))
         throw new Error('Invalid preference ownership');
     const next = fields(wanted), owned = {};
-    const projectDocument = (text) => {
+    const containers = [];
+    let digest = null;
+    const projectDocument = (text, original) => {
+        const generated = new Set(receipt && original !== null && sha256(original) === receipt.digest ? receipt.containers : []);
         const doc = text === null ? {} : JSON.parse(text), old = structuredClone(doc);
         const apply = (values, prior, desired) => {
             const acquired = Object.create(null);
@@ -59,17 +67,27 @@ export function preferences(root, wanted, legacy) {
         for (const key of keys.slice(1)) {
             if (!Object.hasOwn(previous, key) && !Object.hasOwn(next, key))
                 continue;
-            const existing = Object.hasOwn(doc, key) ? doc[key] : {};
+            const present = Object.hasOwn(doc, key);
+            const existing = present ? doc[key] : {};
             const prior = previous[key] ?? {}, desired = next[key] ?? {};
             if (!dict(existing) || !dict(prior) || !dict(desired))
                 throw new Error('Unsupported project preference field');
             const value = { ...existing }, acquired = apply(value, prior, desired);
-            if (Object.keys(value).length || Object.hasOwn(doc, key))
+            if (Object.keys(value).length) {
+                doc[key] = value;
+                if (Object.keys(acquired).length && (!present || generated.has(key)))
+                    containers.push(key);
+            }
+            else if (generated.has(key))
+                delete doc[key];
+            else if (present)
                 doc[key] = value;
             if (Object.keys(acquired).length)
                 owned[key] = acquired;
         }
-        return isDeepStrictEqual(old, doc) ? text : JSON.stringify(doc, null, 2) + '\n';
+        const projected = isDeepStrictEqual(old, doc) ? text : JSON.stringify(doc, null, 2) + '\n';
+        digest = projected === null ? null : sha256(projected);
+        return projected;
     };
-    return { projectDocument, change: () => ({ file, before, after: Object.keys(owned).length ? JSON.stringify(owned) : null }) };
+    return { projectDocument, change: () => ({ file, before, after: Object.keys(owned).length ? JSON.stringify({ version: 2, fields: owned, containers, digest }) : null }) };
 }
