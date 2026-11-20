@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { parse } from 'yaml';
 
 
 export type AgentField = string | string[];
@@ -69,11 +70,13 @@ const YAML_UNSAFE = /^$|^[\s>|@`%&*!?{}[\],#'"-]|[\s]$|:(\s|$)|\s#/;
 
 export function yamlValue(raw: unknown) {
   const s = String(raw ?? '');
-  if (/[\r\n]/.test(s)) {
-    const body = s.replace(/\s+$/, '').split(/\r?\n/).map((l) => `  ${l}`).join('\n');
+  if (s.includes('\n') && !s.includes('\r') && s.trim() && !s.endsWith('\n')) {
+    const body = s.split('\n').map((l) => `  ${l}`).join('\n');
     return `|2-\n${body}`;
   }
-  return YAML_UNSAFE.test(s) ? JSON.stringify(s) : s;
+  if (YAML_UNSAFE.test(s) || /[\x00-\x1f\x7f]/.test(s)) return JSON.stringify(s);
+  try { return parse(s) === s ? s : JSON.stringify(s); }
+  catch { return JSON.stringify(s); }
 }
 
 const READONLY_TOOLS = new Set(['read', 'grep', 'glob']);

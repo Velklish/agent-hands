@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { tmpdir } from 'node:os';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyLayout, parseLayout, planLayout } from '../dist/layout/plan.js';
+import { applyLayout, parseLayout, planLayout } from 'agent-hands';
 import { directoryLink } from '../dist/layout/fs.js';
 import { parse as parseToml } from 'smol-toml';
 function check(label, condition, detail) { test(label, () => assert.ok(condition, detail && String(detail))); }
@@ -80,8 +80,8 @@ if (process.platform !== 'win32')
 check('planned skills include private and shared supporting files', ['sample/SKILL.md', 'sample/refs/example.md', '_shared/ref.md']
     .every(rel => paths.includes(`.cursor/skills/${rel}`)) && text(directRoot, '.cursor/skills/sample/SKILL.md') === skill);
 check('canonical subagent and ordered rules are delivered', text(directRoot, '.cursor/agents/checker.md').includes('readonly: true')
-    && isDeepStrictEqual(fullPlan.rules, [ruleTwo, ruleOne]) && text(directRoot, '.agents/rules/0001.md') === 'Second rule\n'
-    && text(directRoot, '.agents/rules/0002.md') === 'First rule\n');
+    && isDeepStrictEqual(fullPlan.rules, [ruleTwo, ruleOne]) && text(directRoot, '.agents/rules/cursor/0001.md') === 'Second rule\n'
+    && text(directRoot, '.agents/rules/cursor/0002.md') === 'First rule\n');
 check('explicit environment values and write tools do not alter foreign config', JSON.parse(text(directRoot, '.cursor/mcp.json')).mcpServers.example.headers.token === populated.env.LAYOUT_TOKEN
     && JSON.parse(text(directRoot, '.cursor/mcp.json')).callback.command === 'keep'
     && isDeepStrictEqual(fullPlan.writeTools, [{ server: 'example', tool: 'edit' }]));
@@ -223,7 +223,7 @@ for (const [target, configPath, agentExt] of [
         && text(root, `.${target}/skills/sample/SKILL.md`) === skill
         && text(root, `.${target}/skills/sample/refs/example.md`) === 'Supporting file\n'
         && text(root, `.${target}/skills/_shared/ref.md`) === 'Shared supporting file\n'
-        && text(root, '.agents/rules/0001.md') === 'Second rule\n' && text(root, '.agents/rules/0002.md') === 'First rule\n'
+        && text(root, `.agents/rules/${target}/0001.md`) === 'Second rule\n' && text(root, `.agents/rules/${target}/0002.md`) === 'First rule\n'
         && text(root, `.${target}/agents/checker.${agentExt}`).includes('Read the diff.'));
     const empty = planLayout({ ...direct, root, target, servers: [] });
     const removed = await applyLayout(empty, applied.state);

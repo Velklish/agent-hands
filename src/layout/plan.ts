@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import type { LayoutAdapter, Target } from './adapter.js';
+import { isTarget, type LayoutAdapter, type Target } from './adapter.js';
 import { prepare, type LayoutInput } from './engine.js';
 export { applyLayout, readLayoutState } from './engine.js';
 export type { LayoutFile, LayoutInput, LayoutPlan, LayoutResult, LayoutState } from './engine.js';
@@ -12,8 +12,8 @@ const adapters = {
 } satisfies Record<Target, () => LayoutAdapter>;
 export function parseLayout(value: unknown) {
   return prepare(value, target => {
-    if (typeof target !== 'string' || !Object.hasOwn(adapters, target)) throw new TypeError('Unsupported layout target');
-    return adapters[target as Target]();
+    if (!isTarget(target)) throw new TypeError('Unsupported layout target');
+    return adapters[target]();
   });
 }
 export function planLayout(input: LayoutInput) { return parseLayout(input); }

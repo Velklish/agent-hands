@@ -1,19 +1,19 @@
-import { type AgentDefinition, type AgentField, readOnlyAgent, yamlValue } from '../../subagents.js';
-import { type LayoutAdapter, requireMcpSupport } from '../../adapter.js';
-import { object, renderMcpJson } from '../../mcp.js';
+import { type AgentDefinition, yamlValue } from '../../subagents.js';
+import type { LayoutAdapter } from '../../adapter.js';
+import { renderMcpJson } from '../../mcp.js';
 
-const CLAUDE_TOOLS: Record<string, string> = {
-  read: 'Read', grep: 'Grep', glob: 'Glob', bash: 'Bash',
-  edit: 'Edit', write: 'Write', webfetch: 'WebFetch', websearch: 'WebSearch',
-};
+const CLAUDE_TOOLS = new Map([
+  ['read', 'Read'], ['grep', 'Grep'], ['glob', 'Glob'], ['bash', 'Bash'],
+  ['edit', 'Edit'], ['write', 'Write'], ['webfetch', 'WebFetch'], ['websearch', 'WebSearch'],
+]);
 
 export function transpileClaude(a: AgentDefinition) {
-  const fm: (AgentField | undefined)[] = ['---', `name: ${a.name}`, `description: ${yamlValue(a.description)}`];
+  const fm = ['---', `name: ${yamlValue(a.name)}`, `description: ${yamlValue(a.description)}`];
   if (Array.isArray(a.tools) && a.tools.length) {
-    fm.push(`tools: ${a.tools.map((t) => CLAUDE_TOOLS[t.toLowerCase()] ?? t).join(', ')}`);
+    fm.push(`tools: ${yamlValue(a.tools.map((t) => CLAUDE_TOOLS.get(t.toLowerCase()) ?? t).join(', '))}`);
   }
-  if (a.model) fm.push(`model: ${a.model}`);
-  fm.push('---', '', a.prompt);
+  if (a.model) fm.push(`model: ${yamlValue(a.model)}`);
+  fm.push('---', '', String(a.prompt ?? ''));
   return fm.join('\n');
 }
 

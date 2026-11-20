@@ -1,6 +1,10 @@
 import { parseFrontmatter } from '../dist/layout/skills.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { applyLayout, planLayout } from 'agent-hands';
+import { input, put, scratch } from './fixtures.mjs';
 const check = (label, condition, detail) => test(label, () => assert.ok(condition, detail));
 const md = (yaml) => `---\n${yaml}\n---\n# Skill\n`;
 const invalid = [
@@ -58,3 +62,33 @@ const valid = [
         check('frontmatter: rejects absent or unterminated frontmatter', !!error, 'accepted invalid delimiters');
     }
 }
+
+test('all four targets preserve selected skill bytes and reject invalid updates before writing', async t => {
+    const dir = scratch(t), root = path.join(dir, 'workspace'); fs.mkdirSync(root);
+    const sources = ['first','second','third'].map((source,i) => {
+        const name = `skill-${i}`;
+        const dirAbs = path.join(dir, source, name);
+        const bytes = md(`name: ${name}\ndescription: >-\n  task: first line\n  second line\nmetadata:\n  version: 2`);
+        return { name, source, dirAbs, bytes, file: put(dirAbs,'SKILL.md',bytes) };
+    });
+    const files = [];
+    for (const target of ['claude','cursor','codex','opencode']) {
+        const options = input(root,target,{skills:sources.map(({bytes,file,...entry})=>entry)});
+        const initial = await applyLayout(planLayout(options));
+        assert.equal(initial.written.length,3);
+        const repeated = await applyLayout(planLayout(options),initial.state);
+        assert.deepEqual(repeated.state,initial.state);
+        assert.deepEqual(repeated.updated,[]);
+        for (const item of sources) {
+            const destination = path.join(root,`.${target}/skills/${item.name}/SKILL.md`);
+            assert.equal(fs.readFileSync(destination,'utf8'),item.bytes);
+            files.push([destination,item.bytes]);
+            for (const [label,yaml,reason] of invalid) {
+                fs.writeFileSync(item.file,md(yaml.replaceAll('sample',item.name)));
+                assert.throws(()=>planLayout(options),error=>error.message.startsWith(`${item.source}: ${item.file}:`) && /SKILL.md:\d+:\d+/.test(error.message) && (label==='dirname-mismatch'?/different/.test(error.message):reason.test(error.message)));
+                for (const [file,bytes] of files) assert.equal(fs.readFileSync(file,'utf8'),bytes);
+            }
+            fs.writeFileSync(item.file,item.bytes);
+        }
+    }
+});

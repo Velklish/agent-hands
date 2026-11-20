@@ -38,7 +38,8 @@
   },
   "files": [
     "dist",
-    "assets"
+    "assets",
+    "docs/reference/layout.md"
   ],
   "version": "0.0.0"
 }

@@ -4,7 +4,8 @@ import path from 'node:path';
 import {scratch,put} from './fixtures.mjs';
 import {collectSkills, collectSharedDirs,renderSkillsIndex} from '../dist/layout/skills.js';
 import {collectServers,sameServerConfig} from '../dist/layout/mcp.js';
-import {collectSubagents} from '../dist/layout/subagents.js';
+import {collectSubagents,yamlValue} from '../dist/layout/subagents.js';
+import {parse} from 'yaml';
 const entry = (root,name) => ({dirAbs:path.join(root,name),source:name,ownerLabel:name,coords:name,relBase:name});
 const skill = (root,source,name,description) => put(root,`${source}/${name}/SKILL.md`,`---\nname: ${name}\ndescription: ${description}\n---\nBody\n`);
 test('collector preserves folded, chomped, literal and plain descriptions and reports empty blocks', t => {
@@ -15,6 +16,15 @@ test('collector preserves folded, chomped, literal and plain descriptions and re
   assert.equal(errors.length,1);assert.match(errors[0],/empty\/SKILL.md.*description.*non-empty/);
   const rows=renderSkillsIndex(skills).split('\n').filter(line=>line.startsWith('| ')&&!line.startsWith('| Skill |'));
   assert.equal(rows.length,4); assert.ok(rows.includes('| literal | catalog | `catalog/literal/SKILL.md` | First line next line |'));
+  const onlyBroken=collectSkills([{...source,include:['empty']}]);
+  assert.deepEqual(onlyBroken.skills,[]);
+  assert.match(onlyBroken.errors[0],/^catalog: .*empty\/SKILL.md.*description.*non-empty/);
+});
+test('YAML agent scalars preserve punctuation, implicit strings, and line endings', () => {
+  for (const value of ['A "quote"', '"leading', '', 'space ', 'null', '0x1', 'true', 'first\nsecond ', 'first\nsecond\n', 'first\r\nsecond']) {
+    assert.equal(parse(`value: ${yamlValue(value)}\n`).value,value);
+  }
+  assert.equal(yamlValue('A "quote"'),'A "quote"');
 });
 test('ordered sources, overrides, selection before parsing, missing declarations and shared materials',t=>{
   const root=scratch(t);const [first,next]=['first','next'].map(name=>entry(root,name));

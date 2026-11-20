@@ -20,5 +20,15 @@ test('links: nested paths, titles, references, anchors, lists, fences, inline co
 });
 test('archive contains working README example, ordered rules and discoverable skill metadata',t=>{
  const dir=scratch(t);const [{filename}]=JSON.parse(execFileSync('npm',['pack','--ignore-scripts','--json','--pack-destination',dir],{encoding:'utf8'}));execFileSync('tar',['-xzf',path.join(dir,filename),'-C',dir]);const pkg=path.join(dir,'package');assert.ok(fs.existsSync(path.join(pkg,'README.md')));inspect(path.join(pkg,'assets'));
- fs.symlinkSync(path.resolve('node_modules'),path.join(pkg,'node_modules'),'dir');const read=f=>fs.readFileSync(f,'utf8');const example=read(path.join(pkg,'assets/README.md')).match(/```js\n([\s\S]*?)\n```/)[1];put(pkg,'example.mjs',example);const root=path.join(dir,'work');fs.mkdirSync(root);const state=JSON.parse(execFileSync(process.execPath,['example.mjs',root],{cwd:pkg}));assert.equal(state.target,'cursor');for(const [i,name] of ['AGENTS.md','workspace.md'].entries())assert.equal(read(path.join(root,`.agents/rules/000${i+1}.md`)),read(path.join(pkg,'assets/rules',name)));assert.equal(parseFrontmatter(read(path.join(root,'.cursor/skills/asking-questions/SKILL.md'))).name,'asking-questions');
+ fs.mkdirSync(path.join(dir,'node_modules'));fs.symlinkSync(pkg,path.join(dir,'node_modules/agent-hands'),'dir');fs.symlinkSync(path.resolve('node_modules/yaml'),path.join(dir,'node_modules/yaml'),'dir');const read=f=>fs.readFileSync(f,'utf8');const example=read(path.join(pkg,'assets/README.md')).match(/```js\n([\s\S]*?)\n```/)[1];const script=put(dir,'example.mjs',example);const root=path.join(dir,'work');fs.mkdirSync(root);const state=JSON.parse(execFileSync(process.execPath,[script,root],{cwd:pkg}));assert.equal(state.target,'cursor');for(const [i,name] of ['AGENTS.md','workspace.md'].entries())assert.equal(read(path.join(root,`.agents/rules/cursor/000${i+1}.md`)),read(path.join(pkg,'assets/rules',name)));assert.equal(parseFrontmatter(read(path.join(root,'.cursor/skills/asking-questions/SKILL.md'))).name,'asking-questions');
+});
+
+test('the manual Git check exists; instructions cannot advertise unverified shell commands', t => {
+ const root=scratch(t), commands=text=>[...text.matchAll(/`((?:git|npm|npx|agent-hands) [^`\r\n]+)`/g)].map(match=>match[1]);
+ const verify=text=>assert.deepEqual(commands(text),['git -C /path/to/checkout status --short --branch']);
+ const rules=fs.readFileSync('assets/rules/workspace.md','utf8');verify(rules);
+ assert.throws(()=>verify(rules+'\nRun `agent-hands refresh --all`.'));
+ for(const file of files('assets').filter(file=>!file.endsWith('rules/workspace.md'))) assert.deepEqual(commands(fs.readFileSync(file,'utf8')),[],file);
+ execFileSync('git',['init','-q',root]);
+ assert.match(execFileSync('git',['-C',root,'status','--short','--branch'],{encoding:'utf8'}),/^## /);
 });

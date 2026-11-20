@@ -1,6 +1,8 @@
 import type { AgentDefinition } from './subagents.js';
 import type { LayoutFile } from './engine.js';
-export type Target = 'claude' | 'cursor' | 'codex' | 'opencode';
+const targets = ['claude', 'cursor', 'codex', 'opencode'] as const;
+export type Target = typeof targets[number];
+export const isTarget = (value: unknown): value is Target => targets.some(target => target === value);
 export interface McpDocument { path: string; schema?: string; section?: string; key: string; servers: Record<string, unknown> }
 export interface LayoutAdapter {
   target: Target; skillsDir: string; agentsDir: string; ext: string; configPath: string;

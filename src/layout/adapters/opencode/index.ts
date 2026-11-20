@@ -1,11 +1,11 @@
-import { type AgentDefinition, type AgentField, readOnlyAgent, yamlValue } from '../../subagents.js';
+import { type AgentDefinition, readOnlyAgent, yamlValue } from '../../subagents.js';
 import { type LayoutAdapter, requireMcpSupport } from '../../adapter.js';
-import { object, renderMcpJson } from '../../mcp.js';
+import { object } from '../../mcp.js';
 import { renderOpencodeConfig } from './config.js';
 
 export function transpileOpencode(a: AgentDefinition) {
-  const fm: (AgentField | undefined)[] = ['---', `description: ${yamlValue(a.description)}`, 'mode: subagent'];
-  if (a.model) fm.push(`model: ${a.model}`);
+  const fm = ['---', `description: ${yamlValue(a.description)}`, 'mode: subagent'];
+  if (a.model) fm.push(`model: ${yamlValue(a.model)}`);
   if (readOnlyAgent(a)) {
     fm.push('permissions:');
     fm.push('  - { action: "*", resource: "*", effect: deny }');
@@ -19,7 +19,7 @@ export function transpileOpencode(a: AgentDefinition) {
       fm.push('  - { action: read, resource: "*.env.example", effect: allow }');
     }
   }
-  fm.push('---', '', a.prompt);
+  fm.push('---', '', String(a.prompt ?? ''));
   return fm.join('\n');
 }
 
@@ -34,7 +34,7 @@ export const adapter: LayoutAdapter = {
     const rendered = renderOpencodeConfig(servers, { expandEnv: false });
     if (rendered.invalidTimeouts.length) throw new TypeError(`Invalid OpenCode timeouts: ${rendered.invalidTimeouts.join(', ')}`);
     requireMcpSupport(target, rendered);
-    const doc = JSON.parse(rendered.text);
+    const doc = rendered.document;
     return { file: { path, content: rendered.text }, document: {
       path, schema: doc.$schema, section: 'mcp', key: 'servers', servers: doc.mcp.servers,
     } };

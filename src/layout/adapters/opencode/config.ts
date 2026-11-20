@@ -66,6 +66,7 @@ export function renderOpencodeConfig(servers: Record<string, unknown> | null | u
     }
     if (extra.length) dropped.push({ name, keys: extra });
   }
-  const text = `${JSON.stringify({ $schema: 'https://opencode.ai/config.json', mcp: { servers: out } }, null, 2)}\n`;
-  return { text, dropped, skipped, unresolved, invalidTimeouts };
+  const document = { $schema: 'https://opencode.ai/config.json', mcp: { servers: out } };
+  const text = `${JSON.stringify(document, null, 2)}\n`;
+  return { text, document, dropped, skipped, unresolved, invalidTimeouts };
 }

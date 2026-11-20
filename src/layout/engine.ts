@@ -7,7 +7,7 @@ import { SHARED_DIR, validateSkill } from './skills.js';
 import { stageContent } from './content.js';
 import { readRules } from './rule-files.js';
 import { mergeMcpServers, object, renderMcpJson, resolveEnvironment, sameServerConfig, serverHash, valueEnvironmentNames, writeToolRecord } from './mcp.js';
-import type { LayoutAdapter, Target, McpDocument } from './adapter.js';
+import { isTarget, type LayoutAdapter, type Target, type McpDocument } from './adapter.js';
 
 export interface LayoutFile { path: string; content: string | Uint8Array; executable?: boolean }
 export interface LayoutInput {
@@ -28,6 +28,7 @@ export interface LayoutState { target?: Target; files: Record<string, string>; s
 export interface LayoutResult { state: LayoutState; written: string[]; updated: string[]; removed: string[] }
 interface Application { adapter: LayoutAdapter; root: string; entries: LayoutFile[]; checkSources: () => void; mcp?: McpDocument }
 const applications = new WeakMap<LayoutPlan, Application>();
+const rulesDir = (target: Target) => `.agents/rules/${target}`;
 
 function list(input: Record<string, unknown>, key: string) {
   const value = input[key];
@@ -109,29 +110,31 @@ export function prepare(value: unknown, select: (target: unknown) => LayoutAdapt
 
   const entries = new Map<string, LayoutFile>();
   const hashes = new Map<string, string>();
+  const origins = new Map<string, string>();
   const sources: (() => void)[] = [];
-  const stage = (rel: string, content: string | Uint8Array, executable = false) => {
+  const stage = (rel: string, content: string | Uint8Array, executable = false, origin = rel) => {
     const key = toPosix(rel).toLowerCase();
     const digest = sha256(content);
     const previous = entries.get(key);
     if (previous && (previous.path !== toPosix(rel) || hashes.get(key) !== digest || !!previous.executable !== executable)) {
-      throw new Error(`Output collision: ${rel}`);
+      throw new Error(`Output collision: ${rel} (${origins.get(key)} / ${origin})`);
     }
     entries.set(key, { path: toPosix(rel), content, ...(executable ? { executable } : {}) });
     hashes.set(key, digest);
+    origins.set(key, origin);
   };
-  stageContent({ stage: (rel, content) => stage(rel, content), copyDir(src, dest) {
+  stageContent({ stage: (rel, content) => stage(rel, content), copyDir(src, dest, options) {
     const scan = () => [...copyEntries(directory(src), dest, { regularOnly: true })].sort((a, b) => a.rel.localeCompare(b.rel))
       .map(({ src: file, rel }) => ({ rel, content: readFileSync(file), executable: (lstatSync(file).mode & 0o111) !== 0 }));
     const fingerprint = (files: ReturnType<typeof scan>) => JSON.stringify(files.map(({ rel, content, executable }) => [rel, sha256(content), executable]));
     const files = scan();
     const hash = fingerprint(files);
     sources.push(() => { if (fingerprint(scan()) !== hash) throw new Error(`Stale source: ${src}`); });
-    for (const file of files) stage(file.rel, file.content, file.executable);
+    for (const file of files) stage(file.rel, file.content, file.executable, options?.origin ?? src);
   } }, adapter, { skills, sharedDirs, subagents });
   for (const [index, rule] of rules.entries()) {
     const digest = sha256(rule.content);
-    stage(`.agents/rules/${String(index + 1).padStart(4, '0')}.md`, rule.content);
+    stage(`${rulesDir(adapter.target)}/${String(index + 1).padStart(4, '0')}.md`, rule.content);
     sources.push(() => { if (!lstatSync(rule.file, { throwIfNoEntry: false })?.isFile() || sha256(readFileSync(rule.file)) !== digest) throw new Error(`Stale source: ${rule.file}`); });
   }
   for (const { path: rel } of entries.values()) {
@@ -196,8 +199,8 @@ export function readLayoutState(value: unknown): LayoutState {
   for (const rel of created) {
     if (!Object.hasOwn(ownedKeys, rel)) throw new TypeError(`Untracked created MCP path: ${rel}`);
   }
-  if (target !== undefined && typeof target !== 'string') throw new TypeError('Invalid ownership target');
-  return { ...(target === undefined ? {} : { target: target as Target }), files: ownedFiles, serverKeys: ownedKeys, createdMcp: created };
+  if (target !== undefined && !isTarget(target)) throw new TypeError('Invalid ownership target');
+  return { ...(target === undefined ? {} : { target }), files: ownedFiles, serverKeys: ownedKeys, createdMcp: created };
 }
 
 export async function applyLayout(plan: LayoutPlan, previous: LayoutState = { files: {} }): Promise<LayoutResult> {
@@ -210,14 +213,16 @@ export async function applyLayout(plan: LayoutPlan, previous: LayoutState = { fi
   if (state.target !== undefined && state.target !== adapter.target) throw new Error(`Ownership belongs to ${state.target}`);
   const writer = new Writer(root, { files: state.files });
   for (const rel of Object.keys(state.files)) {
-    if (![adapter.skillsDir, adapter.agentsDir, '.agents/rules'].some(dir => rel.startsWith(dir + '/'))
+    if (![adapter.skillsDir, adapter.agentsDir, rulesDir(adapter.target)].some(dir => rel.startsWith(dir + '/'))
       && !(rel === adapter.configPath && !mcp)) throw new Error(`Invalid ownership path: ${rel}`);
     destination(root, rel);
   }
   for (const file of entries) {
     const abs = destination(root, file.path);
     if (file.path === mcp?.path) continue;
-    if (lstatSync(abs, { throwIfNoEntry: false }) && !Object.hasOwn(state.files, file.path)) throw new Error(`Output conflict: ${file.path}`);
+    const stat = lstatSync(abs, { throwIfNoEntry: false });
+    if (stat && (!stat.isFile() || !Object.hasOwn(state.files, file.path))) throw new Error(`Output conflict: ${file.path}`);
+    if (stat && stat.nlink > 1 && file.path !== adapter.configPath) throw new Error(`Refusing hard-linked output: ${file.path}`);
     writer.stage(file.path, file.content, { mode: file.executable ? 0o111 : null });
   }
   let serverKeys = { ...state.serverKeys };
