@@ -165,6 +165,10 @@ function* commit(file, scope, changes, external, peer) {
                 throw new Error('External hook step failed');
         }
         applyTargets({ ...journal, targets: latest() });
+        if (peer?.beforeCommit) {
+            yield peer.beforeCommit(id);
+            checkSnapshots(journal.targets, 'after');
+        }
     }
     catch (error) {
         // Reload the published checkpoint: an unrecorded external value is never authority for rollback.

@@ -18,6 +18,7 @@ export interface ExternalHookChange {
 export interface WorkspaceParticipant {
     readonly id: string;
     stage(operationId: string): Promise<void>;
+    beforeCommit?(operationId: string): Promise<void>;
     finish(operationId: string, decision: 'commit' | 'rollback'): Promise<void>;
 }
 export declare function commitHookOperation(scope: OperationScope, changes: readonly TargetChange[], external?: readonly ExternalHookChange[]): void;

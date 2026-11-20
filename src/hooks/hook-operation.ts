@@ -117,6 +117,7 @@ export interface ExternalHookChange {
 export interface WorkspaceParticipant {
   readonly id: string;
   stage(operationId: string): Promise<void>;
+  beforeCommit?(operationId: string): Promise<void>;
   finish(operationId: string, decision: 'commit'|'rollback'): Promise<void>;
 }
 function* commit(file: string,scope: OperationScope, changes: readonly TargetChange[], external: readonly ExternalHookChange[], peer?: WorkspaceParticipant): Generator<Promise<void>,void> {
@@ -154,6 +155,10 @@ function* commit(file: string,scope: OperationScope, changes: readonly TargetCha
         if (!confirmed) throw new Error('External hook step failed');
       }
       applyTargets({ ...journal,targets:latest() });
+      if (peer?.beforeCommit) {
+        yield peer.beforeCommit(id);
+        checkSnapshots(journal.targets,'after');
+      }
     } catch (error) {
       // Reload the published checkpoint: an unrecorded external value is never authority for rollback.
       const persisted = parseHookJournal(JSON.stringify(JSON.parse(snapshot(file)!).journal),scope.targets);
