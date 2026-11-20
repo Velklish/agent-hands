@@ -37,9 +37,13 @@ function smoke(spec,label) {
   assert.equal(node('--input-type=module','-e',`import {createNavigation} from 'agent-hands';console.log((await createNavigation({root:${JSON.stringify(root)},routeHost:()=>undefined}).repoPath('example')).abs)`),repo);
   node('--input-type=module','-e',`import assert from 'node:assert/strict';for(const suffix of ['dist/index.js','dist/layout/adapters/cursor/index.js','src/index.ts','package.json']) await assert.rejects(import('agent-hands/'+suffix),{code:'ERR_PACKAGE_PATH_NOT_EXPORTED'});`);
   run('python3',['-B',path.join(pkg,'profiles/my-voice/skills/my-voice-calibrate/scripts/collect.py'),'--help'],project);
-  write(path.join(project,'consumer.mts'),`import {planLayout,applyLayout,type LayoutInput,type LayoutResult} from 'agent-hands';
+  write(path.join(project,'consumer.mts'),`import {planLayout,applyLayout,createNavigation,type LayoutInput,type LayoutResult,type RepositoryResolution} from 'agent-hands';
 const input: LayoutInput = {root:'/work',target:'cursor',rules:[],servers:[],subagents:[],skills:[]};
 for(const target of ['cursor','codex'] as const){const result:Promise<LayoutResult>=applyLayout(planLayout({...input,target}));void result;}
+const nav=createNavigation({root:input.root,routeHost:()=>({zone:'repos',gitlab:true})});
+const repository:Promise<RepositoryResolution>=nav.resolve('example',{allowGroup:true});void repository;
+// @ts-expect-error A targeted scan accepts namespace strings only.
+nav.scan([4]);
 // @ts-expect-error Unknown target must be rejected.
 planLayout({...input,target:'unknown'});`);
   // Use an external compiler, resolving declarations only from the installed project.

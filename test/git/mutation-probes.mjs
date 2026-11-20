@@ -27,7 +27,7 @@ const probes = [
   { name: 'unknown command', module: 'navigation', file: 'navigation', target: 'unknown command refuses before discovery',
     find: "command !== 'zone' && command !== 'fresh' && command !== 'clone' && command !== 'path'", replace: 'false' },
   { name: 'unverified Git root', module: 'navigation', file: 'fresh', target: 'fresh stops after the first failed top-level query',
-    find: 'const top = gitToplevel(abs);\n        if (!top || isEnclosingRepo', replace: 'const top = gitToplevel(abs) ?? abs;\n        if (!top || isEnclosingRepo' },
+    find: 'const top = gitToplevel(abs);\n        if (!top)', replace: 'const top = gitToplevel(abs) ?? abs;\n        if (!top)' },
   { name: 'ambiguous origin', module: 'navigation', file: 'navigation', target: 'unreadable, missing, competing and multiple origin',
     find: "throw new OriginError('ambiguous', abs);", replace: 'origins.splice(0, origins.length - 1);' },
   { name: 'disk fallback', module: 'navigation', file: 'navigation', target: 'a nested cwd preserves namespace priority',
@@ -41,9 +41,15 @@ const probes = [
     env: { FIXTURE_NODE_GIT_LAUNCHER: '1', GIT_FIXTURE_NODE_LAUNCHER: '1' },
     find: "process.platform === 'win32' || process.env.FIXTURE_NODE_GIT_LAUNCHER === '1';", replace: "process.platform === 'win32' || process.env.GIT_FIXTURE_NODE_LAUNCHER === '1';" },
   { name: 'index writes in zone scan', module: 'state', file: 'state', target: 'zone scan leaves stale index stat data untouched',
-    find: "git(abs, labels, '--no-optional-locks', 'status'", replace: "git(abs, labels, 'status'" },
+    find: "git(abs, '--no-optional-locks', 'status'", replace: "git(abs, 'status'" },
   { name: 'excluded build directories', module: 'layout', file: 'layout', target: 'discovery finds deep and flat clones',
     find: "'packages', 'dist', 'build'", replace: "'packages', 'build'" },
+  { name: 'missing origin category', module: 'navigation', file: 'public-navigation', target: 'the root API exposes group routes',
+    find: "throw new OriginError('missing', abs);", replace: "throw new OriginError('mismatch', abs);" },
+  { name: 'selected namespace scan', module: 'navigation', file: 'public-navigation', target: 'the root API locates checkouts',
+    find: 'scanZone(root, namespaces)', replace: 'scanZone(root)' },
+  { name: 'explicit reference', module: 'process', file: 'public-navigation', target: 'an explicit URL clone and ref fetch',
+    find: 'gitFetch(dir, fetchTarget(dir), [ref]', replace: 'gitFetch(dir, fetchTarget(dir), []' },
 ];
 
 function verify(probe, expected) {
@@ -63,7 +69,9 @@ function verify(probe, expected) {
 try {
   cpSync(path.join(root, 'dist'), path.join(sandbox, 'dist'), { recursive: true });
   cpSync(path.join(root, 'test/git'), path.join(sandbox, 'test/git'), { recursive: true });
-  writeFileSync(path.join(sandbox, 'package.json'), '{"type":"module"}\n');
+  const { name, type, exports } = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
+  writeFileSync(path.join(sandbox, 'package.json'), JSON.stringify({ name, type, exports }));
+  cpSync(path.join(root, 'node_modules/yaml'), path.join(sandbox, 'node_modules/yaml'), { recursive: true });
   for (const probe of probes) {
     if (process.platform === 'win32' && ['real destination identity', 'lexical zone boundary'].includes(probe.name)) {
       console.log(`${probe.name}: skipped (requires a symlink fixture)`);

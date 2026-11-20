@@ -48,10 +48,12 @@ export interface FreshResult<W = FreshWarning> {
 export declare const DEFAULT_BRANCH_FALLBACK: string[];
 export declare function branchOfOriginRef(ref: string): string;
 export declare function defaultBranch(repoAbs: string, run?: (...args: string[]) => SpawnSyncReturns<string>): string | null;
-export declare function freshenRepo(repoAbs: string, { timeoutMs, observeOnly, deadline, auth }?: {
+export declare function readDefaultBranch(repoAbs: string): string | null;
+export interface FreshOptions {
     timeoutMs?: number;
     observeOnly?: boolean;
     deadline?: number;
     auth?: GitAuth | (() => GitAuth);
-}): FreshResult<FreshWarning>;
+}
+export declare function freshenRepo(repoAbs: string, { timeoutMs, observeOnly, deadline, auth }?: FreshOptions): FreshResult<FreshWarning>;
 export {};

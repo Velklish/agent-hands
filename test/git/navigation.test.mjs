@@ -106,7 +106,7 @@ test('unreadable, missing, competing and multiple origin values do not prove ide
   const two = 'https://code.two.test/team/project.git';
   const dir = seed(path.join(root, 'external/project'));
   const nav = createNavigation(options(root));
-  await assert.rejects(nav.repoPath(one), { reason: 'mismatch' });
+  await assert.rejects(nav.repoPath(one), { reason: 'missing' });
   assert.doesNotThrow(() => checkOrigin(dir, one, routeHost, { allowMissing: true }));
   git(dir, 'remote', 'add', 'origin', one);
   await assert.rejects(nav.clone(two), { reason: 'mismatch' });

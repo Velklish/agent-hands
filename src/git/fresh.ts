@@ -39,9 +39,13 @@ function count(run: (...args: string[]) => SpawnSyncReturns<string>, range: stri
   return n !== null && /^\d+$/.test(n) && Number.isSafeInteger(Number(n)) ? Number(n) : null;
 }
 
-export function freshenRepo(repoAbs: string, { timeoutMs = GIT_NET_TIMEOUT_MS, observeOnly = false, deadline, auth }: {
+export function readDefaultBranch(repoAbs: string) { return defaultBranch(repoAbs); }
+
+export interface FreshOptions {
   timeoutMs?: number; observeOnly?: boolean; deadline?: number; auth?: GitAuth | (() => GitAuth);
-} = {}) {
+}
+
+export function freshenRepo(repoAbs: string, { timeoutMs = GIT_NET_TIMEOUT_MS, observeOnly = false, deadline, auth }: FreshOptions = {}) {
   const run = (args: string[], credentials?: GitAuth) => {
     const remaining = deadline === undefined ? timeoutMs : Math.min(timeoutMs, deadline - Date.now());
     if (remaining <= 0) return { status: null, stdout: '', stderr: '', pid: 0, output: ['', '', ''], signal: null,
