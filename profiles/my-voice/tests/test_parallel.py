@@ -32,9 +32,9 @@ class ParallelTests(unittest.TestCase):
 
         with ExitStack() as stack:
             for name in names:
-                stack.enter_context(patch('voice_sources.collect_' + name, collector(name)))
+                stack.enter_context(patch(f'voice_sources.{name}.collect_{name}', collector(name)))
             with ThreadPoolExecutor(max_workers=1) as executor:
-                pending = executor.submit(collect_sources, LOCAL_SOURCES, workers=2, progress=progress.append)
+                pending = executor.submit(collect_sources, reversed(LOCAL_SOURCES), workers=2, progress=progress.append)
                 try:
                     first = started.get(timeout=5)
                     second = started.get(timeout=5)
@@ -57,8 +57,8 @@ class ParallelTests(unittest.TestCase):
     def test_one_failed_collector_preserves_other_sources_without_error_text(self):
         with ExitStack() as stack:
             for name in ('claude', 'bb', 'cursor', 'opencode'):
-                stack.enter_context(patch('voice_sources.collect_' + name, return_value=Report(name).result()))
-            stack.enter_context(patch('voice_sources.collect_codex', side_effect=RuntimeError('PRIVATE TOKEN')))
+                stack.enter_context(patch(f'voice_sources.{name}.collect_{name}', return_value=Report(name).result()))
+            stack.enter_context(patch('voice_sources.codex.collect_codex', side_effect=RuntimeError('PRIVATE TOKEN')))
             progress = []
             reports = collect_sources(LOCAL_SOURCES, workers=3, progress=progress.append)
         self.assertEqual(['absent', 'unavailable', 'absent', 'absent', 'absent'],
@@ -93,7 +93,7 @@ class ParallelTests(unittest.TestCase):
 
         with ExitStack() as stack:
             for name in ('claude', 'codex', 'bb', 'cursor', 'opencode'):
-                stack.enter_context(patch('voice_sources.collect_' + name, delayed(name)))
+                stack.enter_context(patch(f'voice_sources.{name}.collect_{name}', delayed(name)))
             stack.enter_context(patch('voice_sources.wait', side_effect=controlled_wait))
             collect_sources(LOCAL_SOURCES, workers=2, progress=progress.append)
         self.assertIn('waiting: bb, claude, codex, cursor, opencode', progress)
@@ -109,7 +109,7 @@ class ParallelTests(unittest.TestCase):
                              {'turn_id': 'native-turn'})
         with ExitStack() as stack:
             for name, report in reports.items():
-                stack.enter_context(patch('voice_sources.collect_' + name, return_value=report.result()))
+                stack.enter_context(patch(f'voice_sources.{name}.collect_{name}', return_value=report.result()))
             results = collect_sources(LOCAL_SOURCES, workers=3)
         self.assertEqual([], results[1]['messages'])
         self.assertEqual(1, results[1]['stats']['bb_duplicates'])

@@ -70,7 +70,7 @@ class CalibrationTests(unittest.TestCase):
                                      for i, date in enumerate(dates)), encoding='utf-8')
         with ExitStack() as stack:
             stack.enter_context(patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(self.root)}, clear=True))
-            excluded = [stack.enter_context(patch(f'voice_sources.collect_{name}'))
+            excluded = [stack.enter_context(patch(f'voice_sources.{name}.collect_{name}'))
                         for name in ('bb', 'codex', 'cursor', 'opencode')]
             value, code = collect(selected=['claude'], since=dates[0], until=dates[1], languages=['en'])
         for reader in excluded:
