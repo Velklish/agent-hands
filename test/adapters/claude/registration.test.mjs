@@ -24,6 +24,10 @@ const installations = (...rows) => JSON.stringify({ version:2,plugins:{ 'subject
 const success = { settings:JSON.stringify(after),marketplaces,installations:installations(row) };
 const verified = (end,exit = 0) => registrationEvidence(request,'/fixture/project','1.0.0',start,end,exit);
 assert.ok(verified(success));
+assert.ok(!verified(success,9),'native failure cannot confirm registration');
+assert.ok(!verified({...success,settings:JSON.stringify({...after,env:{}})}),'neighbor mutation cannot confirm registration');
+assert.ok(!verified({...success,installations:null}),'marketplace alone is not an installation');
+assert.ok(!registrationEvidence(request,'/fixture/project','1.0.0',{...start,marketplaces:null},{...success,marketplaces:null},0),'installation alone is not a marketplace');
 for (const invalid of [{installations:null},{installations:installations(row,row)},{installations:installations({...row,scope:'local'})},{installations:installations({...row,projectPath:'/other'})},{installations:installations({...row,version:'0'})},{marketplaces:null},{settings:before}]) assert.ok(!verified({ ...success,...invalid }));
 assert.ok(!verified(success,7));
 console.log('Registration evidence checks passed');
