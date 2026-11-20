@@ -82,3 +82,8 @@ export function gitCloneSha(url, dest, sha, { auth, timeoutMs = GIT_CLONE_TIMEOU
 export function gitFetch(dir, target, refs, options = {}) {
     return gitRun(['-C', dir, 'fetch', '--quiet', ...(options.flags ?? []), '--', target, ...refs], options);
 }
+export function fetchRepositoryRef(dir, ref, { depth = 1, ...options } = {}) {
+    const flags = depth ? ['--depth', String(depth)] : [];
+    const r = gitFetch(dir, fetchTarget(dir), [ref], { ...options, flags });
+    return r.status === 0 ? { ok: true } : { ok: false, status: r.status, timedOut: timedOut(r), detail: gitError(r, options.auth) };
+}

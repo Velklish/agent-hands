@@ -93,3 +93,11 @@ export function gitCloneSha(url: string, dest: string, sha: string, { auth, time
 export function gitFetch(dir: string, target: string, refs: string[], options: Options & { flags?: string[] } = {}) {
   return gitRun(['-C', dir, 'fetch', '--quiet', ...(options.flags ?? []), '--', target, ...refs], options);
 }
+
+export type RefFetchResult = { ok: true } | { ok: false; status: number | null; timedOut: boolean; detail: string };
+
+export function fetchRepositoryRef(dir: string, ref: string, { depth = 1, ...options }: Options & { depth?: number } = {}): RefFetchResult {
+  const flags = depth ? ['--depth', String(depth)] : [];
+  const r = gitFetch(dir, fetchTarget(dir), [ref], { ...options, flags });
+  return r.status === 0 ? { ok: true } : { ok: false, status: r.status, timedOut: timedOut(r), detail: gitError(r, options.auth) };
+}

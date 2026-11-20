@@ -46,4 +46,15 @@ export declare function gitCloneSha(url: string, dest: string, sha: string, { au
 export declare function gitFetch(dir: string, target: string, refs: string[], options?: Options & {
     flags?: string[];
 }): import("node:child_process").SpawnSyncReturns<string>;
+export type RefFetchResult = {
+    ok: true;
+} | {
+    ok: false;
+    status: number | null;
+    timedOut: boolean;
+    detail: string;
+};
+export declare function fetchRepositoryRef(dir: string, ref: string, { depth, ...options }?: Options & {
+    depth?: number;
+}): RefFetchResult;
 export {};

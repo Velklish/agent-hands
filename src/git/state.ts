@@ -14,8 +14,26 @@ const english = {
   unknown: (why: string | null, ref: string, other: string | null) => `Could not count commits ahead: ${why}; could not inspect ${ref}: ${other}`,
 };
 
-type GitResult = { ok: true; out: string } | { ok: false; code: number | null; stderr: string; why: string };
-interface Status { readable: boolean; why: string | null; branch: string | null; detached: boolean; upstream: string | null; ahead: number | null; aheadWhy: string | null; dirty: boolean }
+type CommandIssue = { code: 'timeout'; seconds: number } | { code: 'git'; detail: string };
+export type StatusIssue = CommandIssue | { code: 'not-root'; dir: string }
+  | { code: 'count'; cause: CommandIssue }
+  | { code: 'missing-ref'; ref: string }
+  | { code: 'unknown-ref'; ref: string; count: CommandIssue; lookup: CommandIssue };
+
+function describe(issue: StatusIssue): string {
+  switch (issue.code) {
+    case 'timeout': return english.timeout(issue.seconds);
+    case 'git': return issue.detail;
+    case 'not-root': return english.notRoot(issue.dir);
+    case 'count': return english.count(describe(issue.cause));
+    case 'missing-ref': return english.missing(issue.ref);
+    case 'unknown-ref': return english.unknown(describe(issue.count), issue.ref, describe(issue.lookup));
+  }
+}
+
+type GitResult = { ok: true; out: string } | { ok: false; code: number | null; stderr: string; issue: CommandIssue };
+interface Status { readable: boolean; why: string | null; issue: StatusIssue | null; branch: string | null; detached: boolean;
+  upstream: string | null; ahead: number | null; aheadWhy: string | null; aheadIssue: StatusIssue | null; dirty: boolean }
 export interface Contact { at: number | null; via: string | null }
 export interface ZoneState extends Status { repo: string; default: string | null; contact: Contact }
 
@@ -29,7 +47,7 @@ function parseCount(value: string) {
   return /^\d+$/.test(value) && Number.isSafeInteger(count) ? count : null;
 }
 
-function git(repoAbs: string, labels: typeof english, ...args: string[]): Promise<GitResult> {
+function git(repoAbs: string, ...args: string[]): Promise<GitResult> {
   return new Promise((resolve) => {
     execFile('git', ['-C', repoAbs, ...args], {
       encoding: 'utf8',
@@ -39,11 +57,11 @@ function git(repoAbs: string, labels: typeof english, ...args: string[]): Promis
     }, (err, stdout, stderr) => {
       const text = (stderr ?? '').trim();
       if (!err) return resolve({ ok: true, out: stdout.trim() });
-      const why = err.killed
-        ? labels.timeout(Math.round(GIT_LOCAL_TIMEOUT_MS / 1000))
-        : (text.split('\n').filter(Boolean).pop() || err.message);
+      const issue: CommandIssue = err.killed
+        ? { code: 'timeout', seconds: Math.round(GIT_LOCAL_TIMEOUT_MS / 1000) }
+        : { code: 'git', detail: text.split('\n').filter(Boolean).pop() || err.message };
       const code = !err.killed && typeof err.code === 'number' ? err.code : null;
-      resolve({ ok: false, code, stderr: text, why });
+      resolve({ ok: false, code, stderr: text, issue });
     });
   });
 }
@@ -78,15 +96,17 @@ function lastContact(gitDir: string): Contact {
   return cloned ? { at: cloned, via: 'clone' } : { at: null, via: null };
 }
 
-function parseStatus(status: { ok: true; out: string } | { ok: false; why: string | null }): Status {
+function parseStatus(status: { ok: true; out: string } | { ok: false; issue: StatusIssue }): Status {
   const res: Status = {
     readable: status.ok,
-    why: status.ok ? null : status.why,
+    why: status.ok ? null : describe(status.issue),
+    issue: status.ok ? null : status.issue,
     branch: null,
     detached: false,
     upstream: null,
     ahead: null,
     aheadWhy: null,
+    aheadIssue: null,
     dirty: false,
   };
   if (!status.ok) return res;
@@ -115,58 +135,59 @@ function samePath(a: string, b: string) {
   }
 }
 
-export async function localStatus(dirAbs: string, labels = english) {
-  const top = await git(dirAbs, labels, 'rev-parse', '--path-format=absolute', '--show-toplevel');
+export async function localStatus(dirAbs: string) {
+  const top = await git(dirAbs, 'rev-parse', '--path-format=absolute', '--show-toplevel');
   if (!top.ok || !samePath(top.out, dirAbs)) {
-    return { ...parseStatus({ ok: false, why: labels.notRoot(dirAbs) }), subject: null };
+    return { ...parseStatus({ ok: false, issue: { code: 'not-root', dir: dirAbs } }), subject: null };
   }
-  const s = parseStatus(await git(dirAbs, labels, '--no-optional-locks', 'status', '--porcelain=v2', '--branch'));
+  const s = parseStatus(await git(dirAbs, '--no-optional-locks', 'status', '--porcelain=v2', '--branch'));
   if (!s.readable || !s.ahead) return { ...s, subject: null };
-  const head = await git(dirAbs, labels, 'log', '-1', '--format=%s');
+  const head = await git(dirAbs, 'log', '-1', '--format=%s');
   return { ...s, subject: head.ok ? head.out : null };
 }
 
-function commonGitDir(repoAbs: string, labels: typeof english) {
+function commonGitDir(repoAbs: string) {
   const dotGit = path.join(repoAbs, '.git');
   try {
     if (statSync(dotGit).isDirectory()) return Promise.resolve({ ok: true, out: dotGit });
   } catch { /* Worktrees store a pointer here, not a directory. */ }
-  return git(repoAbs, labels, 'rev-parse', '--path-format=absolute', '--git-common-dir');
+  return git(repoAbs, 'rev-parse', '--path-format=absolute', '--git-common-dir');
 }
 
-async function whyNotCounted(repoAbs: string, ref: string, why: string | null, labels: typeof english) {
-  const exists = await git(repoAbs, labels, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`);
-  if (exists.ok) return labels.count(why);
-  if (exists.code === 1 && !exists.stderr) return labels.missing(ref);
-  return labels.unknown(why, ref, exists.why);
+async function whyNotCounted(repoAbs: string, ref: string, count: CommandIssue): Promise<StatusIssue> {
+  const exists = await git(repoAbs, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`);
+  if (exists.ok) return { code: 'count', cause: count };
+  if (exists.code === 1 && !exists.stderr) return { code: 'missing-ref', ref };
+  return { code: 'unknown-ref', ref, count, lookup: exists.issue };
 }
 
-async function defaultOf(repoAbs: string, originHead: GitResult, labels: typeof english) {
+async function defaultOf(repoAbs: string, originHead: GitResult) {
   if (originHead.ok) return branchOfOriginRef(originHead.out);
   const asked = await Promise.all(DEFAULT_BRANCH_FALLBACK.map(
-    (br) => git(repoAbs, labels, 'rev-parse', '--verify', '--quiet', `refs/remotes/origin/${br}`),
+    (br) => git(repoAbs, 'rev-parse', '--verify', '--quiet', `refs/remotes/origin/${br}`),
   ));
   const i = asked.findIndex((r) => r.ok);
   return i === -1 ? null : DEFAULT_BRANCH_FALLBACK[i];
 }
 
-async function inspect(root: string, repo: string, labels: typeof english): Promise<ZoneState> {
+async function inspect(root: string, repo: string): Promise<ZoneState> {
   const abs = repoAbsPath(root, repo);
   const [originHead, status, gitDir] = await Promise.all([
-    git(abs, labels, 'symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'),
-    git(abs, labels, '--no-optional-locks', 'status', '--porcelain=v2', '--branch'),
-    commonGitDir(abs, labels),
+    git(abs, 'symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'),
+    git(abs, '--no-optional-locks', 'status', '--porcelain=v2', '--branch'),
+    commonGitDir(abs),
   ]);
-  const def = await defaultOf(abs, originHead, labels);
+  const def = await defaultOf(abs, originHead);
   const st = parseStatus(status);
   if (st.ahead === null && st.branch !== null) {
     const ref = st.upstream ?? `origin/${st.branch}`;
-    const counted = await git(abs, labels, 'rev-list', '--count', `${ref}..${st.branch}`);
+    const counted = await git(abs, 'rev-list', '--count', `${ref}..${st.branch}`);
     if (counted.ok) {
       st.ahead = parseCount(counted.out);
-      if (st.ahead === null) st.aheadWhy = labels.count('Git returned an invalid commit count');
+      if (st.ahead === null) st.aheadIssue = { code: 'count', cause: { code: 'git', detail: 'Git returned an invalid commit count' } };
     }
-    else st.aheadWhy = await whyNotCounted(abs, ref, counted.why, labels);
+    else st.aheadIssue = await whyNotCounted(abs, ref, counted.issue);
+    if (st.aheadIssue) st.aheadWhy = describe(st.aheadIssue);
   }
   return {
     repo,
@@ -176,7 +197,7 @@ async function inspect(root: string, repo: string, labels: typeof english): Prom
   };
 }
 
-export async function scanZone(root: string, repos: string[] = listClonedRepos(root).map((r) => r.nsPath), labels = english) {
+export async function scanZone(root: string, repos: readonly string[] = listClonedRepos(root).map((r) => r.nsPath)) {
   const states: ZoneState[] = new Array(repos.length);
   let next = 0;
   const worker = async () => {
@@ -184,7 +205,7 @@ export async function scanZone(root: string, repos: string[] = listClonedRepos(r
       const i = next;
       next += 1;
       if (i >= repos.length) return;
-      states[i] = await inspect(root, repos[i], labels);
+      states[i] = await inspect(root, repos[i]);
     }
   };
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, repos.length) }, worker));

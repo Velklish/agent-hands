@@ -18,6 +18,7 @@ function count(run, range) {
     const n = gitOutput(run('rev-list', '--count', range));
     return n !== null && /^\d+$/.test(n) && Number.isSafeInteger(Number(n)) ? Number(n) : null;
 }
+export function readDefaultBranch(repoAbs) { return defaultBranch(repoAbs); }
 export function freshenRepo(repoAbs, { timeoutMs = GIT_NET_TIMEOUT_MS, observeOnly = false, deadline, auth } = {}) {
     const run = (args, credentials) => {
         const remaining = deadline === undefined ? timeoutMs : Math.min(timeoutMs, deadline - Date.now());

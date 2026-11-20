@@ -4,7 +4,8 @@ export function projectNamespace(value) {
     if (!isRecord(value) || typeof value.path_with_namespace !== 'string')
         return null;
     const parts = value.path_with_namespace.split('/');
-    return parts.length >= 2 && parts.every((part) => part && part !== '.' && part !== '..' && !/[\\\0]/.test(part))
+    return parts.length >= 2 && parts.every((part) => /^[\p{L}\p{N}_.-]+$/u.test(part) && part !== '.' && part !== '..')
+        && !/\.git$/i.test(value.path_with_namespace)
         ? value.path_with_namespace : null;
 }
 export class GitLabError extends Error {
