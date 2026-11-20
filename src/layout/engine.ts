@@ -12,6 +12,11 @@ import { isTarget, type LayoutAdapter, type Target, type McpDocument } from './a
 export interface LayoutFile { path: string; content: string | Uint8Array; executable?: boolean }
 export type LayoutResource = { path: string; relativePath: string; owner: ResourceOwner };
 export type LayoutNotice = { code: 'skipped-supporting-file'; resource: LayoutResource; symbolic: boolean };
+export class LayoutConflictError extends Error {
+  constructor(readonly output: string, readonly first: string | undefined, readonly second: string) {
+    super(`Output collision: ${output} (${first ?? '?'} / ${second})`);
+  }
+}
 export interface LayoutInput {
   root: string;
   target: Target;
@@ -129,7 +134,7 @@ export function prepare(value: unknown, select: (target: unknown) => LayoutAdapt
     const digest = sha256(content);
     const previous = entries.get(key);
     if (previous && (previous.path !== toPosix(rel) || hashes.get(key) !== digest || !!previous.executable !== executable)) {
-      throw new Error(`Output collision: ${rel} (${origins.get(key)} / ${origin})`);
+      throw new LayoutConflictError(toPosix(rel), origins.get(key), origin);
     }
     entries.set(key, { path: toPosix(rel), content, ...(executable ? { executable } : {}) });
     hashes.set(key, digest);

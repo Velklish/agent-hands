@@ -1,5 +1,5 @@
 /// <reference types="node" preserve="true" />
-export { applyLayout, parseLayout, planLayout, readLayoutState } from './layout/plan.js';
+export { applyLayout, parseLayout, planLayout, readLayoutState, LayoutConflictError } from './layout/plan.js';
 export { createNavigation, ensureWorkspaceDirs, runRepositoryCommand, NavigationError, OriginError } from './git/navigation.js';
 export { isUrl, isDiskPath, urlHost, parseUrl, httpsRepoUrl, RouteError } from './git/address.js';
 export { WORKSPACE_DIRS, ZONES, REPOS_ZONE, EXTERNAL_ZONE, SANDBOX_ZONE, zoneRoots, zoneRootAt, zoneOfNs, nsUnderZone, repoAbsPath, cloneOf, isCloneDir, listClonedRepos } from './git/layout.js';

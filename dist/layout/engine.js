@@ -8,6 +8,17 @@ import { stageContent } from './content.js';
 import { readRules } from './rule-files.js';
 import { mergeMcpServers, object, resolveEnvironment, sameServerConfig, serverHash, valueEnvironmentNames, writeToolRecord } from './mcp.js';
 import { isTarget } from './adapter.js';
+export class LayoutConflictError extends Error {
+    output;
+    first;
+    second;
+    constructor(output, first, second) {
+        super(`Output collision: ${output} (${first ?? '?'} / ${second})`);
+        this.output = output;
+        this.first = first;
+        this.second = second;
+    }
+}
 const planBrand = Symbol('layout plan');
 const applications = new WeakMap();
 const rulesDir = (target) => `.agents/rules/${target}`;
@@ -106,7 +117,7 @@ export function prepare(value, select) {
         const digest = sha256(content);
         const previous = entries.get(key);
         if (previous && (previous.path !== toPosix(rel) || hashes.get(key) !== digest || !!previous.executable !== executable)) {
-            throw new Error(`Output collision: ${rel} (${origins.get(key)} / ${origin})`);
+            throw new LayoutConflictError(toPosix(rel), origins.get(key), origin);
         }
         entries.set(key, { path: toPosix(rel), content, ...(executable ? { executable } : {}) });
         hashes.set(key, digest);

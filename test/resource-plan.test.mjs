@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { symlinkSync } from 'node:fs';
 import test from 'node:test';
-import { planLayout } from 'agent-hands';
+import { LayoutConflictError, planLayout } from 'agent-hands';
 import { input, put, scratch } from './fixtures.mjs';
 
 const skillText = '---\nname: example\ndescription: Example skill\n---\nExample.\n';
@@ -44,4 +44,13 @@ test('optional reporting skips a supporting link without following it', { skip: 
   assert.deepEqual(plan.files.map(file => file.path), ['.cursor/skills/example/SKILL.md']);
   assert.deepEqual(plan.notices, [{ code: 'skipped-supporting-file', symbolic: true,
     resource: { path: '.cursor/skills/example/link.md', relativePath: 'link.md', owner: { kind: 'skill', name: 'example' } } }]);
+});
+
+test('conflicting supporting bytes identify both source labels without parsing error copy', t => {
+  const root = scratch(t);
+  const one = path.dirname(put(root, 'inputs/one/readme.md', 'one'));
+  const two = path.dirname(put(root, 'inputs/two/readme.md', 'two'));
+  assert.throws(() => planLayout(input(root, 'cursor', { sharedDirs: [{ srcAbs: one, source: 'first' }, { srcAbs: two, source: 'second' }] })),
+    error => error instanceof LayoutConflictError && error.output === '.cursor/skills/_shared/readme.md'
+      && error.first === 'first' && error.second === 'second');
 });

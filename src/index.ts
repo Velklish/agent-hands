@@ -1,5 +1,5 @@
 /// <reference types="node" preserve="true" />
-export { applyLayout, parseLayout, planLayout, readLayoutState } from './layout/plan.js';
+export { applyLayout, parseLayout, planLayout, readLayoutState, LayoutConflictError } from './layout/plan.js';
 export type { LayoutFile, LayoutInput, LayoutPlan, LayoutResult, LayoutState, LayoutResource, LayoutNotice } from './layout/plan.js';
 export { createNavigation, ensureWorkspaceDirs, runRepositoryCommand, NavigationError, OriginError } from './git/navigation.js';
 export type { NavigationOptions, RepositoryResolution, CheckoutLocation, NavigationProblem } from './git/navigation.js';

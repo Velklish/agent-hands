@@ -16,6 +16,12 @@ export type LayoutNotice = {
     resource: LayoutResource;
     symbolic: boolean;
 };
+export declare class LayoutConflictError extends Error {
+    readonly output: string;
+    readonly first: string | undefined;
+    readonly second: string;
+    constructor(output: string, first: string | undefined, second: string);
+}
 export interface LayoutInput {
     root: string;
     target: Target;
