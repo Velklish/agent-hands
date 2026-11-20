@@ -4,9 +4,12 @@ An independent project for managing agent workspace layouts and repository navig
 
 ## Current state
 
-The `agent-hands` CLI and JavaScript API are not available from this checkout yet.
-The standalone [personal voice profile tool](profiles/my-voice/README.md) is available
-from source with Python 3.10 or newer. It can use supplied samples without reading local history.
+The repository navigation library can find, inspect, clone and update checkouts.
+Lookup is read-only unless the caller explicitly requests a clone or an update.
+The installable CLI and package entry points are not available yet.
+See [repository navigation](docs/reference/repository-navigation.md) for the library contract.
+
+The standalone [voice profile tool](profiles/my-voice/README.md) requires Python 3.10 or newer and supports supplied samples and optional local history.
 
 ## Development
 
@@ -14,6 +17,9 @@ Requires Node.js 26 or newer, npm and Git.
 
 ```sh
 npm ci --registry=https://registry.npmjs.org
+npm run typecheck
+npm test
+node test/git/mutation-probes.mjs
 npx --no-install backslop lint
 npx --no-install backslop status
 npx --no-install backslop gates

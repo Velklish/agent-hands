@@ -1,5 +1,6 @@
 {
   "name": "agent-hands",
+  "type": "module",
   "description": "Agent workspace layouts and repository navigation.",
   "author": "Velklish (https://github.com/Velklish)",
   "license": "MIT",
@@ -13,6 +14,13 @@
     "node": ">=26"
   },
   "devDependencies": {
-    "backslop": "https://codeload.github.com/Velklish/backslop/tar.gz/refs/tags/v1.0.0"
+    "@types/node": "26.6.6",
+    "backslop": "https://codeload.github.com/Velklish/backslop/tar.gz/refs/tags/v1.0.0",
+    "typescript": "6.0.3"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test \"test/**/*.test.mjs\""
   }
 }
