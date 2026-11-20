@@ -7,6 +7,8 @@ const dictionary = (value, accepts) => record(value) && Object.entries(value).ev
 const source = (v) => record(v) && keys(v, ['source']) && record(v.source) && keys(v.source, ['source', 'path']) && v.source.source === 'directory' && typeof v.source.path === 'string' && v.source.path.startsWith('/');
 const callback = (v, timeouts) => record(v) && keys(v, ['type', 'command', 'timeout']) && v.type === 'command' && typeof v.command === 'string' && v.command.length > 0 && (!Object.hasOwn(v, 'timeout') || (typeof v.timeout === 'number' && timeouts.includes(v.timeout)));
 const question = 'AskUserQuestion|AskQuestion|request_user_input';
+const identifier = '[a-z][a-z0-9]*(?:_[a-z0-9]+)*';
+const pairedTools = new RegExp(`^mcp__${identifier}__\\(${identifier}\\|${identifier}\\)$`);
 const macMatchers = {
     SessionStart: ['startup|resume'], Stop: [], PreToolUse: [question, 'Write'],
     PostToolUse: [question], PostToolUseFailure: [question],
@@ -18,7 +20,8 @@ function group(value, event, mac) {
         return false;
     if (!mac)
         return event === 'PreToolUse' && value.matcher === 'Write';
-    return Object.hasOwn(macMatchers, event) && (!Object.hasOwn(value, 'matcher') || (typeof value.matcher === 'string' && macMatchers[event].includes(value.matcher)));
+    return Object.hasOwn(macMatchers, event) && (!Object.hasOwn(value, 'matcher') || (typeof value.matcher === 'string' && (macMatchers[event].includes(value.matcher) ||
+        (event === 'PostToolUse' && pairedTools.test(value.matcher)))));
 }
 function readSettings(text, platform) {
     let doc;

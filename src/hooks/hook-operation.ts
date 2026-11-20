@@ -41,7 +41,12 @@ function reference(scope: OperationScope, file: string, id: string) {
   return JSON.stringify({ id,journal:file,pointers:scope.pointers,targets:scope.targets });
 }
 export function withAccountLock<T>(home:string|undefined,scope:OperationScope,run:()=>T):T {
-  return home ? exclusive({...scope,directory:path.join(realpathSync(home),'.agent-hands','account-hooks','lock')},run) : run();
+  if (!home) return run();
+  const project = path.join(path.dirname(scope.pointers[0]),'transaction');
+  return exclusive({...scope,directory:project},() => {
+    if (snapshot(path.join(project,'pending.json')) !== null) throw new Error('Unfinished local hook operation');
+    return run();
+  });
 }
 
 function checkReference(scope: OperationScope, file: string, raw: unknown): string {

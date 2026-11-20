@@ -83,7 +83,10 @@ function prepare(input) {
     return { changes, steps: plans.flatMap(p => p.steps), scope, account, result: { changed: plans.some(p => p.result.changed), shifted: plans.some(p => p.result.shifted) } };
 }
 function accountScope(scope, home) {
-    return home ? { ...scope, pointers: [...scope.pointers, path.join(realpathSync(home), '.agent-hands', 'account-hooks', 'pending')] } : scope;
+    if (!home)
+        return scope;
+    const privateRoot = path.join(realpathSync(home), '.agent-hands', 'account-hooks');
+    return { ...scope, directory: path.join(privateRoot, 'transaction'), pointers: [...scope.pointers, path.join(privateRoot, 'pending')] };
 }
 const plans = new WeakMap();
 export function prepareWorkspaceHooks(input) {
@@ -107,11 +110,29 @@ export function applyWorkspaceHooks(input) {
         withAccountLock(account, scope, () => commitHookOperation(scope, changes, steps));
     return result;
 }
-export function inspectWorkspaceHookOperation({ root }) {
+export function inspectWorkspaceHookOperation({ root, accountHome }) {
     if (!path.isAbsolute(root))
         throw new TypeError('Absolute workspace path required');
     const local = path.join(realpathSync(root), '.agent-hands', 'hooks'), pointer = path.join(local, 'pending');
-    const recorded = findHookOperation(path.join(local, 'transaction'), [pointer]);
+    const localDirectory = path.join(local, 'transaction');
+    const raw = snapshot(pointer);
+    // A workspace pointer describes the selection; it never supplies a filesystem destination.
+    let recorded = null;
+    if (raw !== null) {
+        const ref = JSON.parse(raw);
+        if (!ref || !Array.isArray(ref.pointers) || !Array.isArray(ref.targets))
+            throw new Error('Invalid workspace operation pointer');
+        recorded = ref;
+    }
+    else {
+        recorded = findHookOperation(localDirectory, [pointer]);
+        if (!recorded && accountHome) {
+            const shared = accountScope({ directory: localDirectory, pointers: [pointer] }, accountHome);
+            const pending = findHookOperation(shared.directory, shared.pointers);
+            if (pending?.pointers[0] === pointer)
+                recorded = pending;
+        }
+    }
     if (!recorded)
         return { pending: false, registration: false };
     if (recorded.pointers[0] !== pointer || recorded.pointers.length > 2)
