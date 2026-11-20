@@ -106,6 +106,26 @@ test('malformed JSON and edited owned MCP keys cannot be reconciled by changing 
   assert.deepEqual(retired.state.serverKeys,{});
 });
 
+test('OpenCode reconciles owned additions and updates without adopting or rewriting foreign entries on a no-op', async t => {
+  const root=scratch(t), file=put(root,'opencode.json','{ "model": "manual", "mcp": { "extra": 1, "servers": { "foreign": { "command": ["manual"] } } } }\n');
+  const before=fs.readFileSync(file,'utf8');
+  const run=(servers,previous)=>applyLayout(planLayout(input(root,'opencode',{servers})),previous);
+  const server=(name,command)=>({name,definition:{command}});
+  await run([]);
+  assert.equal(fs.readFileSync(file,'utf8'),before);
+  const first=await run([server('owned','original')]);
+  const edit=JSON.parse(fs.readFileSync(file,'utf8')); edit.model='changed';
+  fs.writeFileSync(file,JSON.stringify(edit));
+  const second=await run([server('owned','updated'),server('added','node')],first.state);
+  assert.deepEqual(Object.keys(second.state.serverKeys['opencode.json']).sort(),['added','owned']);
+  const changed=JSON.parse(fs.readFileSync(file,'utf8'));
+  assert.deepEqual(changed,{model:'changed',mcp:{extra:1,servers:{foreign:{command:['manual']},owned:{type:'local',command:['updated']},added:{type:'local',command:['node']}}}});
+  const current=fs.readFileSync(file,'utf8');
+  const repeat=await run([server('owned','updated'),server('added','node')],second.state);
+  assert.deepEqual(repeat.updated,[]);
+  assert.equal(fs.readFileSync(file,'utf8'),current);
+});
+
 test('display data cannot substitute for or mutate the applicable plan', async t => {
   const dir = scratch(t), root = path.join(dir,'workspace'); fs.mkdirSync(root);
   const rule = put(dir,'rule.md','Original rule');

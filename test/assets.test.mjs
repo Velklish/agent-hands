@@ -24,6 +24,7 @@ test('archive contains working README example, ordered rules and discoverable sk
  const shipped=new Set(files(pkg));
  const checkReadme=()=>assert.deepEqual(brokenLinks(readme,shipped),[],'broken archive README links');
  checkReadme();
+ for (const file of shipped) if (file.endsWith('.md')) assert.deepEqual(brokenLinks(file,shipped),[],file);
  fs.appendFileSync(readme,'\n[Missing from the package](missing-archive-file.md)\n');
  assert.throws(checkReadme,/broken archive README links/);
  fs.mkdirSync(path.join(dir,'node_modules'));fs.symlinkSync(pkg,path.join(dir,'node_modules/agent-hands'),'dir');fs.symlinkSync(path.resolve('node_modules/yaml'),path.join(dir,'node_modules/yaml'),'dir');const read=f=>fs.readFileSync(f,'utf8');const example=read(path.join(pkg,'assets/README.md')).match(/```js\n([\s\S]*?)\n```/)[1];const script=put(dir,'example.mjs',example);const root=path.join(dir,'work');fs.mkdirSync(root);const state=JSON.parse(execFileSync(process.execPath,[script,root],{cwd:pkg}));assert.equal(state.target,'cursor');for(const [i,name] of ['AGENTS.md','workspace.md'].entries())assert.equal(read(path.join(root,`.agents/rules/cursor/000${i+1}.md`)),read(path.join(pkg,'assets/rules',name)));assert.equal(parseFrontmatter(read(path.join(root,'.cursor/skills/asking-questions/SKILL.md'))).name,'asking-questions');

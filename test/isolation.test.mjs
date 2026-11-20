@@ -22,7 +22,7 @@ function graph(root, entry, target) {
       if (edge) {
         const spec = edge.value;
         assert.equal(typeof spec,'string','computed import');
-        if (spec.startsWith('node:') || spec === 'yaml') return;
+        if (spec.startsWith('node:') || spec === 'yaml' || spec === 'smol-toml') return;
         const dep = path.resolve(path.dirname(file),spec);
         assert.ok(spec.startsWith('.') && dep.startsWith(root + path.sep),'outside runtime');
         if (target && dep.startsWith(adapters)) assert.ok(dep.startsWith(path.join(adapters,target) + path.sep),'sibling import');
@@ -39,6 +39,7 @@ test('emitted facade graph stays within runtime', () => {
   const root = path.resolve('dist');
   graph(root,'index.js');
   graph(root,'layout/artifacts.js');
+  graph(root,'layout/adapters/codex/transports.js','codex');
 });
 
 test('emitted import guard rejects computed imports, side-effect imports and re-exports', t => {

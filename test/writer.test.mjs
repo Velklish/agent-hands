@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { artifactLayout } from '../dist/layout/artifacts.js';
-import { removeTemporarySnapshot, sha256, writeAtomic } from '../dist/layout/fs.js';
+import { removeTemporarySnapshot, sha256, switchDirectoryBinding, writeAtomic } from '../dist/layout/fs.js';
 import { Writer } from '../dist/layout/writer.js';
 import { scratch, put } from './fixtures.mjs';
 
@@ -68,7 +68,7 @@ test('copy refuses an escaping tree and prune ignores an escaping legacy ownersh
   const outside = put(dir,'untouched.md','foreign');
   const writer = new Writer(root,{files:{}});
   writer.copyDir(source,'../escaped',{origin:'catalog'});
-  assert.throws(()=>writer.apply(),/Output escapes the root: .*escaped\/SKILL.md.*catalog|Output escapes the root: .*escaped\/SKILL.md/);
+  assert.throws(()=>writer.apply(),/Output escapes the root: .*escaped\/SKILL.md/);
   assert.equal(fs.existsSync(path.join(dir,'escaped')),false);
   assert.deepEqual(fs.readdirSync(root),[]);
   const legacy = new Writer(root,{files:{'../untouched.md':sha256('foreign')}});
@@ -147,16 +147,50 @@ test('shared artifacts are immutable, isolated per consumer, and bindings roll b
   assert.equal(fs.realpathSync(path.join(b, 'native/skills')), initialTarget);
   if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(a, rel)).mode & 0o222, 0);
   const pending = prepare(a, first.files, 'new');
+  const oldSource=path.join(dir,'source-old'), newSource=path.join(dir,'source-new');
+  put(oldSource,'file','before'); put(newSource,'file','after');
+  const sourceBinding=path.join(a,'selected-source');
+  switchDirectoryBinding(sourceBinding,oldSource,{hadOld:false}).finalize();
   await assert.rejects(pending.transaction([], async () => {
     pending.apply();
     assert.notEqual(fs.realpathSync(binding), initialTarget);
     assert.equal(fs.readFileSync(path.join(a, config), 'utf8'), 'new');
+    assert.equal(fs.readFileSync(path.join(sourceBinding,'file'),'utf8'),'after');
     throw new Error('late refusal');
-  }), /late refusal/);
+  },{commitBindings:()=>switchDirectoryBinding(sourceBinding,newSource,{hadOld:true})}), /late refusal/);
   assert.equal(fs.realpathSync(binding), initialTarget);
   assert.equal(fs.readFileSync(path.join(a, config), 'utf8'), 'old');
+  assert.equal(fs.readFileSync(path.join(sourceBinding,'file'),'utf8'),'before');
   assert.equal(first.files[rel], sha256('old'));
   prepare(a, first.files, 'new').apply();
   assert.equal(fs.readFileSync(path.join(a, rel), 'utf8'), 'new');
   assert.equal(fs.readFileSync(path.join(b, rel), 'utf8'), 'old');
+});
+
+test('a shared artifact refuses manual edits, ignored foreign files and links outside its configured store', t => {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'resource-migration-'));
+  t.after(()=>removeTemporarySnapshot(dir));
+  const store=path.join(dir,'store'); fs.mkdirSync(store);
+  const artifacts=artifactLayout(['native/skills'],{root:store,artifacts:path.join(store,'artifacts'),renderer:1});
+  const group='native/skills', rel=`${group}/example/SKILL.md`;
+  const previous={files:{[rel]:sha256('previous')}};
+  const migrate=root=>{
+    const writer=new Writer(root,previous,{artifacts});
+    writer.stage(rel,'new');
+    writer.apply();
+  };
+  const edited=path.join(dir,'edited'), file=put(edited,rel,'manual');
+  assert.throws(()=>migrate(edited),/edited output/);
+  assert.equal(fs.readFileSync(file,'utf8'),'manual');
+  const ignored=path.join(dir,'ignored');
+  put(ignored,rel,'previous'); put(ignored,'.gitignore','personal.env\n');
+  const personal=put(ignored,`${group}/personal.env`,'keep this');
+  assert.throws(()=>migrate(ignored),/foreign-files.*personal.env/);
+  assert.equal(fs.readFileSync(personal,'utf8'),'keep this');
+  const linked=path.join(dir,'linked'), external=path.join(dir,'external');
+  put(external,'example/SKILL.md','previous'); fs.mkdirSync(path.join(linked,'native'),{recursive:true});
+  fs.symlinkSync(external,path.join(linked,group),process.platform === 'win32' ? 'junction' : 'dir');
+  assert.throws(()=>migrate(linked),/outside-store/);
+  assert.equal(fs.readFileSync(path.join(external,'example/SKILL.md'),'utf8'),'previous');
+  assert.equal(fs.readdirSync(store).length,0);
 });

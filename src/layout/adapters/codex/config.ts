@@ -1,4 +1,5 @@
 import { tomlKey, tomlQuote } from '../../toml.js';
+import type { CodexTransport } from './transports.js';
 
 const MAPPED_KEYS = new Set(['url', 'headers', 'http_headers_helper', 'required', 'command', 'args', 'env', 'tool_timeout_sec']);
 const IGNORED_KEYS = new Set(['type']);
@@ -95,7 +96,7 @@ export function renderCodexConfig(servers: Record<string, unknown>, { expandEnv 
   return { text: `${blocks.join('\n\n')}\n`, dropped, skipped, unresolved };
 }
 
-export function codexTransportConflicts(servers: Record<string, unknown> | null | undefined, userServers?: Map<string, 'http' | 'stdio' | null> | null) {
+export function codexTransportConflicts(servers: Record<string, unknown> | null | undefined, userServers?: ReadonlyMap<string, CodexTransport> | null) {
   const out: { name: string; ours: 'http' | 'stdio'; theirs: 'http' | 'stdio' }[] = [];
   for (const [name, cfg] of Object.entries(servers ?? {})) {
     const ours = (cfg as { url?: unknown } | null | undefined)?.url ? 'http' : ((cfg as { command?: unknown } | null | undefined)?.command ? 'stdio' : null);
