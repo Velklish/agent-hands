@@ -50,6 +50,10 @@ const probes = [
     find: 'scanZone(root, namespaces)', replace: 'scanZone(root)' },
   { name: 'explicit reference', module: 'process', file: 'public-navigation', target: 'an explicit URL clone and ref fetch',
     find: 'gitFetch(dir, fetchTarget(dir), [ref]', replace: 'gitFetch(dir, fetchTarget(dir), []' },
+  { name: 'scan root identity', module: 'state', file: 'public-navigation', target: 'targeted scan cannot report the enclosing checkout',
+    find: 'if (!samePath(top.out, abs))', replace: 'if (false)' },
+  { name: 'search result validation', module: 'navigation', file: 'public-navigation', target: 'untyped search results fail',
+    find: 'remoteCandidates(await search(target))', replace: 'await search(target)' },
 ];
 
 function verify(probe, expected) {

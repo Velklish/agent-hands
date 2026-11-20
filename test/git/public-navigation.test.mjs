@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { createNavigation, fetchRepositoryRef, gitClone, gitToplevel, localStatus,
-  NavigationError, OriginError, projectNamespace, repoHead } from 'agent-hands';
+  NavigationError, OriginError, projectNamespace, repoHead, runRepositoryCommand } from 'agent-hands';
 import { fixture, git, seed } from './fixture.mjs';
 
 const routeHost = authority => authority === 'code.test' ? { zone: 'repos', gitlab: true } : { zone: 'external' };
@@ -43,6 +43,38 @@ test('the root API locates checkouts without updating them and scans only select
   assert.deepEqual(selected.map(row => row.repo), ['team/project']);
   assert.equal(selected[0].aheadIssue?.code, 'missing-ref');
   assert.equal(repoHead(project), git(project, 'rev-parse', 'HEAD'));
+});
+
+test('targeted scan cannot report the enclosing checkout as a named subgroup', async t => {
+  const root = fixture(t);
+  seed(root);
+  const subgroup = path.join(root, 'repos/team/subgroup');
+  mkdirSync(path.join(subgroup, '.git'), { recursive: true });
+  const abs = seed(path.join(root, 'repos/team/project'));
+  assert.equal(gitToplevel(subgroup), root);
+  const nav = createNavigation({ root, routeHost });
+  assert.throws(() => nav.verifyCheckoutRoot(subgroup), { problem: { code: 'not-checkout', abs: subgroup, exists: true } });
+  assert.deepEqual(nav.verifyCheckoutRoot(abs), { abs });
+  const [good, rejected] = await nav.scan(['team/subgroup', 'team/project']);
+  assert.equal(good.readable, true);
+  assert.equal(rejected.readable, false);
+  assert.equal(rejected.branch, null);
+  assert.deepEqual(rejected.issue, { code: 'not-root', dir: subgroup });
+  assert.deepEqual(rejected.contact, { at: null, via: null });
+});
+
+test('untyped search results fail before ambiguity or command output', async t => {
+  const root = fixture(t);
+  const conclusive = { nsPath: 'team/project', url: 'https://code.test/team/project.git', kind: 'exact' };
+  for (const result of [undefined, {}, [null, conclusive], [conclusive, ,], [{ ...conclusive, kind: 2 }], [{ ...conclusive, personal: 'yes' }]]) {
+    const output = [], errors = [];
+    const options = { root, routeHost, search: async () => result };
+    assert.equal(await runRepositoryCommand(options, 'path', { target: 'project' }, { out: line => output.push(line), err: line => errors.push(line) }), 1);
+    assert.deepEqual(output, []);
+    assert.deepEqual(errors, ['Remote search returned an invalid candidate list']);
+  }
+  const options = { root, routeHost, search: async () => [conclusive] };
+  assert.equal((await createNavigation(options).resolve('project')).source, 'remote');
 });
 
 test('an explicit URL clone and ref fetch do not need a workspace or a host route', t => {

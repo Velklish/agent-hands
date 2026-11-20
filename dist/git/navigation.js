@@ -84,6 +84,21 @@ export function checkOrigin(abs, url, routeHost, { allowMissing = false } = {}) 
     if (!origin || !sameRepositoryUrl(origin, url, routeHost))
         throw new OriginError('mismatch', abs);
 }
+function remoteCandidates(result) {
+    if (result === null)
+        return null;
+    const valid = (value) => {
+        if (!value || typeof value !== 'object')
+            return false;
+        const { nsPath, url, kind, personal } = value;
+        return typeof nsPath === 'string' && !!nsPath && typeof url === 'string' && isUrl(url)
+            && typeof kind === 'string' && !!kind && (personal === undefined || typeof personal === 'boolean');
+    };
+    if (!Array.isArray(result) || !Array.from(result).every(valid)) {
+        throw new NavigationError('Remote search returned an invalid candidate list', [], { code: 'invalid-search' });
+    }
+    return result;
+}
 export function createNavigation({ root: explicitRoot, cwd = process.cwd(), routeHost, search, namespaceUrl, personal, onCollision }) {
     const discovered = discoverRoot({ root: explicitRoot, cwd });
     if (!discovered)
@@ -135,7 +150,7 @@ export function createNavigation({ root: explicitRoot, cwd = process.cwd(), rout
             throw new NavigationError(`Repository name is ambiguous on disk: ${target}`, local.candidates, { code: 'ambiguous', source: 'local' });
         if (!search)
             throw new NavigationError(`No local match for ${target}; remote search is not configured. Specify a repository URL.`, [], { code: 'search-disabled' });
-        const hits = await search(target);
+        const hits = remoteCandidates(await search(target));
         if (!hits)
             throw new NavigationError(`Remote search is unavailable for ${target}; specify a repository URL.`, [], { code: 'search-unavailable' });
         if (hits.length > 1)
@@ -188,9 +203,7 @@ export function createNavigation({ root: explicitRoot, cwd = process.cwd(), rout
         }
         if (url)
             checkOrigin(abs, url, routeHost);
-        const top = gitToplevel(abs);
-        if (!top || realpathSync(top) !== realpathSync(abs))
-            throw new NavigationError(`Not a clone root: ${abs}`);
+        verifyCheckoutRoot(abs);
         return { abs, state: fresh ? freshenRepo(abs) : null };
     }
     async function fresh(target) {
@@ -219,12 +232,21 @@ export function createNavigation({ root: explicitRoot, cwd = process.cwd(), rout
             throw new NavigationError(`Not inside a Git clone: ${abs}`, [], { code: 'enclosing-repo', abs, top, zone });
         return { abs: top };
     }
+    function verifyCheckoutRoot(target) {
+        const abs = path.resolve(cwd, target);
+        const top = gitToplevel(abs);
+        const canonical = realPath(abs);
+        if (!top || !canonical || canonical !== realPath(top)) {
+            throw new NavigationError(`Not a clone root: ${abs}`, [], { code: 'not-checkout', abs, exists: isDirectory(abs) });
+        }
+        return { abs };
+    }
     function freshFromDisk(abs) {
         const located = locateCheckout(abs);
         return { ...located, state: freshenRepo(located.abs) };
     }
     const verifyOrigin = (abs, url, options) => checkOrigin(abs, url, routeHost, options);
-    return { resolve, clone, repoPath, fresh, locateCheckout, verifyOrigin, scan: (namespaces) => scanZone(root, namespaces) };
+    return { resolve, clone, repoPath, fresh, locateCheckout, verifyCheckoutRoot, verifyOrigin, scan: (namespaces) => scanZone(root, namespaces) };
 }
 export const REPOSITORY_HELP = 'clone <name|namespace|URL> | path <name|path|URL> [--clone] [--fresh] | fresh [name|path] | zone';
 export async function runRepositoryCommand(options, command, { target, clone = false, fresh = false } = {}, io = { out: (text) => console.log(text), err: (text) => console.error(text) }) {
