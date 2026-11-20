@@ -44,6 +44,22 @@ test('server map comparison, soft failures and source attribution',t=>{
   assert.equal(errors.length,3);assert.match(errors[0],/1.json/);assert.match(errors[1],/source 2.*source 3/);assert.match(errors[2],/4.json/);assert.equal(result.servers.one.command,'node');assert.equal(result.servers.two.command,'other');assert.equal(result.serverOwner.one,'2');
   assert.equal(sameServerConfig({a:['a','b']},{a:['b','a']}),false);assert.equal(sameServerConfig({a:1},{}),false);
 });
+
+for (const [kind,doc] of [['null','null'],['list','[{"command":"node"}]'],['string','"not a map"'],['broken JSON','{']]) {
+  test(`malformed server map (${kind}) can be reported and skipped or rejected with its address`,t=>{
+    const root = scratch(t), file = put(root,'invalid.json',doc);
+    const sources = [{label:'invalid',file},{label:'next',file:put(root,'next.json','{"next":{"command":"node"}}')}];
+    const expected = kind === 'broken JSON' ? /Invalid JSON/ : /expected a map/;
+    const problem = message => message.includes(file) && expected.test(message);
+    const diagnostics = [];
+    const {servers} = collectServers(sources,{reject:message=>diagnostics.push(message)});
+    assert.deepEqual(servers,{next:{command:'node'}});
+    assert.equal(diagnostics.length,1);
+    assert.ok(problem(diagnostics[0]),diagnostics[0]);
+    assert.throws(()=>collectServers(sources),error=>error instanceof Error && problem(error.message));
+    assert.throws(()=>collectServers(sources,{reject:message=>{throw new Error(message)}}),error=>error instanceof Error && problem(error.message));
+  });
+}
 test('canonical agent collection requires fields, rejects invalid lines and duplicate sources',t=>{
   const root=scratch(t),sources=['one','two'].map(s=>entry(root,s));const yaml='name: sample\ndescription: |\n  first\n  next\ntools: [read, grep]\nprompt: Try it\n';
   put(root,'one/sample.yaml',yaml);assert.equal(collectSubagents(sources)[0].description,'first\nnext\n');

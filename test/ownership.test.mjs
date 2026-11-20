@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import {syncBuiltinESMExports} from 'node:module';
 import test from 'node:test';
 import { applyLayout, planLayout, readLayoutState } from 'agent-hands';
 import { input, put, scratch } from './fixtures.mjs';
@@ -13,6 +14,75 @@ test('supporting-file collisions name both sources and leave the workspace untou
   assert.deepEqual(fs.readdirSync(root), []);
   fs.copyFileSync(first, second);
   assert.equal(planLayout(options).files.length, 1);
+});
+
+test('distinct supporting source trees merge into one native directory', async t => {
+  const dir = scratch(t), root = path.join(dir,'workspace'); fs.mkdirSync(root);
+  put(dir,'first/reference/a.md','first'); put(dir,'second/reference/b.md','second');
+  const sharedDirs = ['first','second'].map(source => ({source,srcAbs:path.join(dir,source)}));
+  const plan = planLayout(input(root,'cursor',{sharedDirs}));
+  const {state,written} = await applyLayout(plan);
+  const files = ['a.md','b.md'].map(name => `.cursor/skills/_shared/reference/${name}`);
+  assert.deepEqual(written,files);
+  assert.deepEqual(Object.keys(state.files),files);
+  assert.deepEqual(files.map(file => fs.readFileSync(path.join(root,file),'utf8')),['first','second']);
+});
+
+test('readLayoutState rejects unknown and cross-target per-key MCP paths without applying', () => {
+  const nativePaths = {claude:'.mcp.json',cursor:'.cursor/mcp.json',opencode:'opencode.json'};
+  const state = (rel,target) => ({target,files:{},serverKeys:{[rel]:{tool:'a'.repeat(64)}},createdMcp:[rel]});
+  for (const target of [undefined,...Object.keys(nativePaths),'codex']) {
+    for (const rel of ['other.json','../opencode.json','.codex/config.toml']) {
+      assert.throws(() => readLayoutState(state(rel,target)),/Invalid MCP state path/);
+    }
+    for (const [owner,rel] of Object.entries(nativePaths)) {
+      if (target === undefined || target === owner) assert.deepEqual(readLayoutState(state(rel,target)).createdMcp,[rel]);
+      else assert.throws(() => readLayoutState(state(rel,target)),/Invalid MCP state path/);
+    }
+  }
+  assert.throws(() => readLayoutState({target:'cursor',files:{},createdMcp:['.cursor/mcp.json']}),/Untracked created MCP path/);
+});
+
+test('root API mirrors executable status in both directions and reports mode-only updates', {skip:process.platform === 'win32'}, async t => {
+  const dir = scratch(t), root = path.join(dir,'workspace'); fs.mkdirSync(root);
+  const source = path.join(dir,'support'), script = put(source,'task.sh','stable bytes');
+  const rel = '.cursor/skills/_shared/task.sh', file = path.join(root,rel);
+  const plan = () => planLayout(input(root,'cursor',{sharedDirs:[{srcAbs:source}]}));
+  let {state} = await applyLayout(plan());
+  for (const mode of [0o755,0o644]) {
+    fs.chmodSync(script,mode);
+    const result = await applyLayout(plan(),state);
+    assert.deepEqual(result.updated,[rel]);
+    assert.deepEqual(result.state,state);
+    assert.equal(fs.statSync(file).mode & 0o111,mode & 0o111);
+    assert.equal(fs.readFileSync(file,'utf8'),'stable bytes');
+    state=result.state;
+    assert.deepEqual((await applyLayout(plan(),state)).updated,[]);
+  }
+});
+
+test('root API propagates chmod failure and rolls back permissions already changed', {skip:process.platform === 'win32'}, async t => {
+  const dir = scratch(t), root = path.join(dir,'workspace'); fs.mkdirSync(root);
+  const srcAbs = path.join(dir,'support');
+  const sources = ['a.sh','b.sh'].map(name=>put(srcAbs,name,'stable bytes'));
+  const outputs = ['a.sh','b.sh'].map(name=>path.join(root,'.cursor/skills/_shared',name));
+  const plan = () => planLayout(input(root,'cursor',{sharedDirs:[{srcAbs}]}));
+  const {state} = await applyLayout(plan());
+  for (const source of sources) fs.chmodSync(source,0o755);
+  const chmod = fs.chmodSync;
+  const injected = t.mock.method(fs,'chmodSync',(file,mode) => {
+    if (file === outputs[1]) {
+      assert.equal(fs.statSync(outputs[0]).mode & 0o111,0o111);
+      throw Object.assign(new Error('injected chmod refusal'),{code:'EPERM'});
+    }
+    return chmod(file,mode);
+  });
+  syncBuiltinESMExports();
+  try { await assert.rejects(applyLayout(plan(),state),{code:'EPERM',message:'injected chmod refusal'}); }
+  finally { injected.mock.restore(); syncBuiltinESMExports(); }
+  assert.deepEqual(outputs.map(file=>fs.statSync(file).mode & 0o111),[0,0]);
+  assert.deepEqual(outputs.map(file=>fs.readFileSync(file,'utf8')),['stable bytes','stable bytes']);
+  assert.deepEqual((await applyLayout(plan(),state)).updated,['a.sh','b.sh'].map(name=>`.cursor/skills/_shared/${name}`));
 });
 
 test('malformed JSON and edited owned MCP keys cannot be reconciled by changing selection', async t => {

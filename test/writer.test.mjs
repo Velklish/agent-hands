@@ -62,6 +62,20 @@ test('duplicate bytes coalesce; divergent or escaping staging refuses before any
   }
 });
 
+test('copy refuses an escaping tree and prune ignores an escaping legacy ownership path', t => {
+  const dir=scratch(t), root=path.join(dir,'workspace'), source=path.join(dir,'source');
+  fs.mkdirSync(root); put(source,'SKILL.md','source');
+  const outside = put(dir,'untouched.md','foreign');
+  const writer = new Writer(root,{files:{}});
+  writer.copyDir(source,'../escaped',{origin:'catalog'});
+  assert.throws(()=>writer.apply(),/Output escapes the root: .*escaped\/SKILL.md.*catalog|Output escapes the root: .*escaped\/SKILL.md/);
+  assert.equal(fs.existsSync(path.join(dir,'escaped')),false);
+  assert.deepEqual(fs.readdirSync(root),[]);
+  const legacy = new Writer(root,{files:{'../untouched.md':sha256('foreign')}});
+  assert.deepEqual(legacy.apply(),[]);
+  assert.equal(fs.readFileSync(outside,'utf8'),'foreign');
+});
+
 test('state writes replace the inode, keep the old bytes on refusal, and leave no temporary file', t => {
   const root = scratch(t), file = path.join(root, 'nested/state.json'), old = path.join(root, 'old');
   writeAtomic(file, 'first', { mode: 0o600 });

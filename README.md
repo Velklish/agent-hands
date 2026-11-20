@@ -24,7 +24,8 @@ Backslop is a development dependency pinned to its public GitHub `v1.0.0` tag,
 downloaded over HTTPS. Its installation is locked in `package-lock.json`.
 No global installation, personal settings, external harness binaries or hooks are required by the layout tests.
 
-See [the documentation](docs/README.md) and [contributor workflow](AGENTS.md).
+See [the documentation](https://github.com/Velklish/agent-hands/tree/main/docs) and the
+[contributor workflow](https://github.com/Velklish/agent-hands/blob/main/AGENTS.md) in the source repository.
 Future product distribution will use exact GitHub release tags; this foundation
 does not assign a product version.
 

@@ -1,5 +1,5 @@
 import { type AgentDefinition, yamlValue } from '../../subagents.js';
-import type { LayoutAdapter } from '../../adapter.js';
+import { mergedMcpPath, type LayoutAdapter } from '../../adapter.js';
 import { renderMcpJson } from '../../mcp.js';
 
 const CLAUDE_TOOLS = new Map([
@@ -19,7 +19,7 @@ export function transpileClaude(a: AgentDefinition) {
 
 
 const target = 'claude';
-const path = '.mcp.json';
+const path = mergedMcpPath.claude;
 export const adapter: LayoutAdapter = {
   target, skillsDir: '.claude/skills', agentsDir: '.claude/agents', ext: 'md',
   renderAgent: transpileClaude, configPath: path,
