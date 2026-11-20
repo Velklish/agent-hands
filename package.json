@@ -1,5 +1,12 @@
 {
   "name": "agent-hands",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "description": "Agent workspace layouts and repository navigation.",
   "author": "Velklish (https://github.com/Velklish)",
   "license": "MIT",
@@ -13,6 +20,25 @@
     "node": ">=26"
   },
   "devDependencies": {
-    "backslop": "https://codeload.github.com/Velklish/backslop/tar.gz/refs/tags/v1.0.0"
-  }
+    "@types/node": "26.6.6",
+    "acorn": "8.15.0",
+    "backslop": "https://codeload.github.com/Velklish/backslop/tar.gz/refs/tags/v1.0.0",
+    "smol-toml": "1.9.0",
+    "typescript": "6.0.3"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run test:layout",
+    "test:layout": "npm run build && npm run test:layout:types && node --test test/*.test.mjs test/adapters/*/*.test.mjs",
+    "test:layout:types": "tsc --ignoreConfig --noEmit --strict --module NodeNext test/contract.mts"
+  },
+  "dependencies": {
+    "yaml": "2.9.1"
+  },
+  "files": [
+    "dist",
+    "assets"
+  ],
+  "version": "0.0.0"
 }

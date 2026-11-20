@@ -1,0 +1,29 @@
+import { type AgentDefinition, type AgentField, readOnlyAgent, yamlValue } from '../../subagents.js';
+import { type LayoutAdapter, requireMcpSupport } from '../../adapter.js';
+import { object, renderMcpJson } from '../../mcp.js';
+
+const CLAUDE_TOOLS: Record<string, string> = {
+  read: 'Read', grep: 'Grep', glob: 'Glob', bash: 'Bash',
+  edit: 'Edit', write: 'Write', webfetch: 'WebFetch', websearch: 'WebSearch',
+};
+
+export function transpileClaude(a: AgentDefinition) {
+  const fm: (AgentField | undefined)[] = ['---', `name: ${a.name}`, `description: ${yamlValue(a.description)}`];
+  if (Array.isArray(a.tools) && a.tools.length) {
+    fm.push(`tools: ${a.tools.map((t) => CLAUDE_TOOLS[t.toLowerCase()] ?? t).join(', ')}`);
+  }
+  if (a.model) fm.push(`model: ${a.model}`);
+  fm.push('---', '', a.prompt);
+  return fm.join('\n');
+}
+
+
+const target = 'claude';
+const path = '.mcp.json';
+export const adapter: LayoutAdapter = {
+  target, skillsDir: '.claude/skills', agentsDir: '.claude/agents', ext: 'md',
+  renderAgent: transpileClaude, configPath: path,
+  renderMcp(servers) {
+    return { file: { path, content: renderMcpJson(servers) }, document: { path, key: 'mcpServers', servers } };
+  },
+};
