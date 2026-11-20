@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import { isTarget } from './adapter.js';
 import { prepare } from './engine.js';
 export { applyLayout, readLayoutState, LayoutConflictError } from './engine.js';
+export { LayoutMcpError } from './mcp-policy.js';
 const load = createRequire(import.meta.url);
 const adapters = {
     claude: () => load('./adapters/claude/index.js').adapter,

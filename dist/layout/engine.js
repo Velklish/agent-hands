@@ -1,13 +1,14 @@
 import path from 'node:path';
 import { lstatSync, readFileSync, rmSync } from 'node:fs';
-import { fields, preparedServer, stringList } from './stdio.js';
+import { fields, preparedServer, serverFields, stringList } from './stdio.js';
 import { copyEntries, Writer } from './writer.js';
 import { sha256, toPosix } from './fs.js';
 import { SHARED_DIR, validateSkill } from './skills.js';
 import { stageContent } from './content.js';
 import { readRules } from './rule-files.js';
 import { mergeMcpServers, object, resolveEnvironment, sameServerConfig, serverHash, valueEnvironmentNames, writeToolRecord } from './mcp.js';
-import { isMergedMcpPath, isTarget } from './adapter.js';
+import { isMergedMcpPath, isTarget, mcpReporter } from './adapter.js';
+import { LayoutMcpError, readMcpPolicy } from './mcp-policy.js';
 export class LayoutConflictError extends Error {
     output;
     first;
@@ -52,11 +53,23 @@ function sourceLabel(value) {
     return value;
 }
 export function prepare(value, select) {
-    const input = fields(value, 'layout', ['root', 'target', 'skills', 'sharedDirs', 'servers', 'subagents', 'rules', 'env', 'writeTools', 'supportingFiles']);
+    const input = fields(value, 'layout', ['root', 'target', 'skills', 'sharedDirs', 'servers', 'subagents', 'rules', 'env', 'writeTools', 'supportingFiles', 'scope', 'mcp']);
     const { root } = input;
     if (typeof root !== 'string' || !path.isAbsolute(root))
         throw new TypeError('Expected an absolute workspace root');
     const adapter = select(input.target);
+    const scope = input.scope === undefined ? 'all' : input.scope;
+    if (scope !== 'all' && scope !== 'resources' && scope !== 'mcp')
+        throw new TypeError('Invalid layout scope');
+    const policy = readMcpPolicy(input.mcp);
+    if (policy.mode === 'merge' && !isMergedMcpPath(adapter.configPath, adapter.target))
+        throw new TypeError('Target does not support per-key MCP ownership');
+    if (policy.resetInheritedAgents && !adapter.agentResets)
+        throw new TypeError('Target does not support inherited agent resets');
+    if ((policy.comments !== undefined || policy.transportReference !== undefined) && !adapter.acceptsMcpReference)
+        throw new TypeError('Target does not support MCP comments or a transport reference');
+    const diagnostics = [];
+    const report = mcpReporter(adapter, policy, diagnostics);
     const supportingFiles = input.supportingFiles ?? 'strict';
     if (supportingFiles !== 'strict' && supportingFiles !== 'skip-nonregular')
         throw new TypeError('Unknown supporting file policy');
@@ -90,16 +103,35 @@ export function prepare(value, select) {
             throw new TypeError(`Invalid tool name for ${name}`);
         return { name, description: raw.description, prompt: raw.prompt, model: raw.model, tools };
     });
-    const rules = readRules(stringList(input.rules, 'Expected an array: rules'));
+    const rules = scope === 'mcp' ? [] : readRules(stringList(input.rules, 'Expected an array: rules'));
     const serverNames = new Set();
-    const definitions = Object.fromEntries(list(input, 'servers').map(entry => {
-        const result = preparedServer(entry);
-        unique(serverNames, result[0], 'server');
-        return result;
+    const literal = new Set();
+    const definitions = Object.fromEntries((scope === 'resources' ? [] : list(input, 'servers')).flatMap(entry => {
+        const raw = fields(entry, 'server', ['name', 'definition', 'source', 'placeholders']);
+        if (typeof raw.name !== 'string' || !raw.name.trim())
+            throw new TypeError('Expected a server name');
+        const name = raw.name;
+        unique(serverNames, name, 'server');
+        if (raw.placeholders !== undefined && raw.placeholders !== 'native' && raw.placeholders !== 'literal')
+            throw new TypeError('Invalid server placeholder policy');
+        if ((raw.placeholders ?? policy.placeholders) === 'literal')
+            literal.add(name);
+        if (policy.compatibility !== 'report')
+            return [preparedServer(entry)];
+        const definition = prepareCompatibleServer(raw, adapter, report);
+        return definition ? [[name, definition]] : [];
     }));
     const env = input.env === undefined ? undefined : environment(input.env);
-    const resolved = env ? Object.fromEntries(Object.entries(definitions).map(([name, definition]) => preparedServer({ name, definition: resolveEnvironment(definition, env) }))) : definitions;
-    const requiredVars = valueEnvironmentNames(resolved);
+    const resolved = env ? Object.fromEntries(Object.entries(definitions).flatMap(([name, definition]) => {
+        if (literal.has(name))
+            return [[name, definition]];
+        const raw = { name, definition: resolveEnvironment(definition, env) };
+        if (policy.compatibility !== 'report')
+            return [preparedServer(raw)];
+        const next = prepareCompatibleServer(raw, adapter, report);
+        return next ? [[name, next]] : [];
+    })) : definitions;
+    const requiredVars = valueEnvironmentNames(Object.fromEntries(Object.entries(resolved).filter(([name]) => !literal.has(name))));
     const writeTools = input.writeTools === undefined ? undefined : collectWriteTools(input.writeTools, definitions);
     const entries = new Map();
     const hashes = new Map();
@@ -123,23 +155,24 @@ export function prepare(value, select) {
         hashes.set(key, digest);
         origins.set(key, origin);
     };
-    stageContent({ stage: (rel, content, owner) => { stage(rel, content); remember(rel, path.basename(rel), owner); }, copyDir(src, dest, owner, origin) {
-            const scan = (initial = false) => [...copyEntries(directory(src), dest, { regularOnly: supportingFiles === 'strict', skipped: entry => {
-                        if (initial)
-                            notices.push({ code: 'skipped-supporting-file', symbolic: entry.symbolic,
-                                resource: { path: toPosix(entry.rel), relativePath: toPosix(path.relative(dest, entry.rel)), owner } });
-                    } })].sort((a, b) => a.rel.localeCompare(b.rel))
-                .map(({ src: file, rel }) => ({ rel, content: readFileSync(file), executable: (lstatSync(file).mode & 0o111) !== 0 }));
-            const fingerprint = (files) => JSON.stringify(files.map(({ rel, content, executable }) => [rel, sha256(content), executable]));
-            const files = scan(true);
-            const hash = fingerprint(files);
-            sources.push(() => { if (fingerprint(scan()) !== hash)
-                throw new Error(`Stale source: ${src}`); });
-            for (const file of files) {
-                stage(file.rel, file.content, file.executable, origin ?? src);
-                remember(file.rel, path.relative(dest, file.rel), owner);
-            }
-        } }, adapter, { skills, sharedDirs, subagents });
+    if (scope !== 'mcp')
+        stageContent({ stage: (rel, content, owner) => { stage(rel, content); remember(rel, path.basename(rel), owner); }, copyDir(src, dest, owner, origin) {
+                const scan = (initial = false) => [...copyEntries(directory(src), dest, { regularOnly: supportingFiles === 'strict', skipped: entry => {
+                            if (initial)
+                                notices.push({ code: 'skipped-supporting-file', symbolic: entry.symbolic,
+                                    resource: { path: toPosix(entry.rel), relativePath: toPosix(path.relative(dest, entry.rel)), owner } });
+                        } })].sort((a, b) => a.rel.localeCompare(b.rel))
+                    .map(({ src: file, rel }) => ({ rel, content: readFileSync(file), executable: (lstatSync(file).mode & 0o111) !== 0 }));
+                const fingerprint = (files) => JSON.stringify(files.map(({ rel, content, executable }) => [rel, sha256(content), executable]));
+                const files = scan(true);
+                const hash = fingerprint(files);
+                sources.push(() => { if (fingerprint(scan()) !== hash)
+                    throw new Error(`Stale source: ${src}`); });
+                for (const file of files) {
+                    stage(file.rel, file.content, file.executable, origin ?? src);
+                    remember(file.rel, path.relative(dest, file.rel), owner);
+                }
+            } }, adapter, { skills, sharedDirs, subagents });
     for (const [index, rule] of rules.entries()) {
         const digest = sha256(rule.content);
         stage(`${rulesDir(adapter.target)}/${String(index + 1).padStart(4, '0')}.md`, rule.content);
@@ -152,14 +185,69 @@ export function prepare(value, select) {
                 throw new Error(`Output collision: ${dir} is a parent of ${rel}`);
         }
     }
-    const { file, document } = adapter.renderMcp(resolved);
-    const files = [...entries.values(), ...(Object.keys(resolved).length ? [file] : [])];
+    const mcp = scope === 'resources' ? undefined : adapter.renderMcp(resolved, { policy, literal, report });
+    const files = [...entries.values(), ...(mcp && (!mcp.empty || policy.emitEmpty) ? [mcp.file] : [])];
+    const mcpFingerprints = mcp?.document && { path: mcp.document.path, current: hashEntries(mcp.document.servers), ...(mcp.legacyHashes && { legacy: mcp.legacyHashes }) };
     const result = { [planBrand]: true, root, files: files.map(f => ({ ...f, content: typeof f.content === 'string' ? f.content : Buffer.from(f.content) })),
-        resources: [...resources.values()], notices,
+        resources: [...resources.values()], notices, diagnostics: structuredClone(diagnostics), ...(mcpFingerprints && { mcpFingerprints }),
         ...(rules.length ? { rules: rules.map(row => row.file) } : {}), ...(requiredVars.length ? { requiredVars } : {}), ...(writeTools ? { writeTools } : {}) };
-    applications.set(result, { adapter, root, entries: files, mcp: document, checkSources: () => { for (const check of sources)
+    const resets = scope !== 'resources' && policy.resetInheritedAgents ? adapter.agentResets?.(subagents.map(agent => agent.name)) : undefined;
+    applications.set(result, { adapter, root, entries: files, mcp: policy.mode === 'replace' ? undefined : mcp?.document, resets, policy, scope, diagnostics,
+        checkSources: () => { for (const check of sources)
             check(); } });
     return result;
+}
+function hashEntries(entries) {
+    return Object.fromEntries(Object.entries(entries).map(([name, entry]) => [name, serverHash(entry)]));
+}
+function prepareCompatibleServer(raw, adapter, report) {
+    const name = String(raw.name);
+    sourceLabel(raw.source);
+    const value = raw.definition;
+    const doc = fields(value, 'definition', object(value) ? Object.keys(value) : []);
+    const command = typeof doc.command === 'string' && !!doc.command.trim();
+    const url = typeof doc.url === 'string' && !!doc.url.trim();
+    if ((doc.command === undefined || typeof doc.command === 'string') && (doc.url === undefined || typeof doc.url === 'string') && !command && !url) {
+        report({ code: 'unsupported-transport', server: name }, `${name}: missing command or url`);
+        return undefined;
+    }
+    const known = {}, extra = Object.create(null);
+    const dropped = [];
+    for (const [key, value] of Object.entries(doc)) {
+        if (value === undefined)
+            continue;
+        if (key === 'tool_timeout_sec' && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)) {
+            report({ code: 'invalid-timeout', server: name, field: key }, `${name}: invalid ${key}`);
+        }
+        else if ((command && ['headers', 'http_headers_helper'].includes(key)) || (url && ['args', 'env'].includes(key)))
+            dropped.push(key);
+        else if (serverFields.includes(key))
+            known[key] = value;
+        else if (adapter.preservesServerSettings)
+            extra[key] = jsonData(value);
+        else
+            dropped.push(key);
+    }
+    if (dropped.length)
+        report({ code: 'unsupported-fields', server: name, keys: dropped }, `${name}: unsupported fields ${dropped.join(', ')}`);
+    const [, definition] = preparedServer({ name, definition: known });
+    return { ...definition, ...extra };
+}
+function jsonData(value, ancestors = new Set()) {
+    if (value === null || typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)))
+        return value;
+    if (ancestors.has(value))
+        throw new TypeError('Expected acyclic JSON server settings');
+    ancestors.add(value);
+    try {
+        if (Array.isArray(value))
+            return Array.from({ length: value.length }, (_, i) => jsonData(Object.getOwnPropertyDescriptor(value, i)?.value, ancestors));
+        const data = fields(value, 'server settings', object(value) ? Object.keys(value) : []);
+        return Object.fromEntries(Object.entries(data).map(([key, item]) => [key, jsonData(item, ancestors)]));
+    }
+    finally {
+        ancestors.delete(value);
+    }
 }
 function environment(value) {
     const raw = fields(value, 'env', object(value) ? Object.keys(value) : []);
@@ -200,7 +288,7 @@ function readHashes(value) {
     }));
 }
 export function readLayoutState(value) {
-    const { target, files, serverKeys, createdMcp } = fields(value, 'ownership state', ['target', 'files', 'serverKeys', 'createdMcp']);
+    const { target, files, serverKeys, createdMcp, agentResets } = fields(value, 'ownership state', ['target', 'files', 'serverKeys', 'createdMcp', 'agentResets']);
     if (target !== undefined && !isTarget(target))
         throw new TypeError('Invalid ownership target');
     const ownedFiles = readHashes(files);
@@ -215,30 +303,69 @@ export function readLayoutState(value) {
         if (!Object.hasOwn(ownedKeys, rel))
             throw new TypeError(`Untracked created MCP path: ${rel}`);
     }
-    return { ...(target === undefined ? {} : { target }), files: ownedFiles, serverKeys: ownedKeys, createdMcp: created };
+    const resets = agentResets === undefined ? undefined : stringList(agentResets, 'Expected an array of agent reset names');
+    if (resets) {
+        if (target !== undefined && target !== 'opencode')
+            throw new TypeError('Invalid ownership target for inherited agent resets');
+        const seen = new Set();
+        for (const name of resets)
+            unique(seen, segment(name, 'agent reset'), 'agent reset');
+    }
+    return { ...(target === undefined ? {} : { target }), files: ownedFiles, serverKeys: ownedKeys, createdMcp: created, ...(resets && { agentResets: resets }) };
 }
-export async function applyLayout(plan, previous = { files: {} }) {
+export async function applyLayout(plan, previous = { files: {} }, options) {
     const application = applications.get(plan);
     if (!application)
         throw new Error('Expected a plan returned by planLayout');
-    const { root, entries, mcp, adapter } = application;
+    const requestedStage = options === undefined ? undefined : fields(options, 'layout apply options', ['stage']).stage;
+    if (requestedStage !== undefined && typeof requestedStage !== 'function')
+        throw new TypeError('Expected a layout stage callback');
+    const { root, entries, mcp, adapter, scope, policy, resets } = application;
     if (!lstatSync(root, { throwIfNoEntry: false })?.isDirectory())
         throw new Error(`Expected a regular workspace root: ${root}`);
     application.checkSources();
     const state = readLayoutState(previous);
     if (state.target !== undefined && state.target !== adapter.target)
         throw new Error(`Ownership belongs to ${state.target}`);
-    const writer = new Writer(root, { files: state.files });
-    for (const rel of Object.keys(state.files)) {
+    if (state.agentResets?.length && !adapter.agentResets)
+        throw new Error('Invalid target for inherited agent reset state');
+    const touchedFiles = Object.fromEntries(Object.entries(state.files).filter(([rel]) => scope === 'mcp' ? rel === adapter.configPath : scope === 'resources' ? rel !== adapter.configPath : true));
+    const retainedFiles = Object.fromEntries(Object.entries(state.files).filter(([rel]) => !Object.hasOwn(touchedFiles, rel)));
+    if (mcp)
+        delete touchedFiles[mcp.path];
+    const diagnostics = structuredClone(application.diagnostics);
+    const writer = new Writer(root, { files: touchedFiles });
+    const watched = new Map();
+    const snapshot = (rel) => {
+        const file = destination(root, rel);
+        const stat = lstatSync(file, { throwIfNoEntry: false });
+        if (!stat)
+            return null;
+        if (!stat.isFile())
+            throw new Error(`Output conflict: ${rel}`);
+        return `${stat.mode}:${stat.nlink}:${sha256(readFileSync(file))}`;
+    };
+    const watch = (rel) => { if (!watched.has(rel))
+        watched.set(rel, snapshot(rel)); };
+    const assertCurrent = () => {
+        if (!lstatSync(root, { throwIfNoEntry: false })?.isDirectory())
+            throw new Error(`Expected a regular workspace root: ${root}`);
+        application.checkSources();
+        for (const [rel, before] of watched)
+            if (snapshot(rel) !== before)
+                throw new Error(`Stale output: ${rel}`);
+    };
+    for (const rel of Object.keys(touchedFiles)) {
         if (![adapter.skillsDir, adapter.agentsDir, rulesDir(adapter.target)].some(dir => rel.startsWith(dir + '/'))
             && !(rel === adapter.configPath && !mcp))
             throw new Error(`Invalid ownership path: ${rel}`);
-        destination(root, rel);
+        watch(rel);
     }
     for (const file of entries) {
         const abs = destination(root, file.path);
         if (file.path === mcp?.path)
             continue;
+        watch(file.path);
         const stat = lstatSync(abs, { throwIfNoEntry: false });
         if (stat && (!stat.isFile() || !Object.hasOwn(state.files, file.path)))
             throw new Error(`Output conflict: ${file.path}`);
@@ -250,10 +377,12 @@ export async function applyLayout(plan, previous = { files: {} }) {
     const extra = [];
     const erased = [];
     const created = new Set(state.createdMcp);
-    for (const rel of new Set([...Object.keys(serverKeys), ...(mcp ? [mcp.path] : [])])) {
+    const securePaths = new Set([adapter.configPath]);
+    for (const rel of scope === 'resources' ? [] : new Set([...Object.keys(serverKeys), ...(mcp ? [mcp.path] : [])])) {
         if (!mcp || mcp.path !== rel)
             throw new Error(`Invalid MCP state path: ${rel}`);
-        const commit = planMcp(root, mcp, serverKeys[rel] ?? {}, created.has(rel));
+        watch(rel);
+        const commit = planMcp(root, mcp, serverKeys[rel] ?? {}, created.has(rel), policy, adapter.target, diagnostics);
         if (!commit) {
             delete serverKeys[rel];
             created.delete(rel);
@@ -275,20 +404,46 @@ export async function applyLayout(plan, previous = { files: {} }) {
             writer.released.add(rel);
         }
     }
-    const atomic = { paths: new Set([adapter.configPath]), restoreOriginalMode: true };
+    let nextResets = state.agentResets;
+    if (scope !== 'resources' && (resets || state.agentResets?.length)) {
+        const document = resets ?? adapter.agentResets?.([]);
+        if (!document)
+            throw new Error('Invalid inherited agent reset state');
+        watch(document.path);
+        const reset = planAgentResets(root, document, state.agentResets ?? []);
+        nextResets = reset.owned;
+        if (reset.content !== undefined) {
+            writer.stage(document.path, reset.content, { adopt: true });
+            writer.released.add(document.path);
+            extra.push(document.path);
+        }
+    }
+    const nextState = (files) => ({ target: adapter.target, files: { ...retainedFiles, ...files }, serverKeys, createdMcp: [...created], ...(nextResets && { agentResets: nextResets }) });
+    if (requestedStage) {
+        writer.validate();
+        const finalFiles = Object.fromEntries(writer.staged.filter(file => !writer.released.has(file.rel)).map(file => [file.rel, file.newHash]));
+        const changed = writer.staged.filter(file => file.diskHash !== file.newHash || (process.platform !== 'win32' && file.mode !== null && (lstatSync(file.abs).mode & 0o111) !== file.mode));
+        const removes = [...Object.keys(touchedFiles).filter(rel => !Object.hasOwn(finalFiles, rel) && !writer.released.has(rel) && watched.get(rel) !== null), ...erased];
+        const writes = changed.map(file => ({ path: file.rel, content: Buffer.from(file.buf), secure: securePaths.has(file.rel), ...(file.mode !== null && { executable: !!file.mode }) }));
+        const stagedState = nextState(finalFiles);
+        await requestedStage({ writes, removes: [...removes], state: structuredClone(stagedState), diagnostics: structuredClone(diagnostics), assertCurrent });
+        return { state: stagedState, written: changed.filter(file => file.diskHash === null).map(file => file.rel), updated: changed.filter(file => file.diskHash !== null).map(file => file.rel), removed: removes, diagnostics };
+    }
+    const atomic = { paths: securePaths, restoreOriginalMode: true };
     const removed = await writer.transaction(extra, async () => {
-        const removed = writer.apply(undefined, atomic);
+        const removed = writer.apply(assertCurrent, atomic);
         for (const rel of erased)
             rmSync(path.join(root, rel));
         return [...removed, ...erased];
     }, { atomic });
-    return { state: { target: adapter.target, files: { ...writer.files }, serverKeys, createdMcp: [...created] }, written: writer.written, updated: writer.updated, removed };
+    return { state: nextState(writer.files), written: writer.written, updated: writer.updated, removed, diagnostics };
 }
-function planMcp(root, mcp, previous, created) {
+function planMcp(root, mcp, previous, created, policy, target, diagnostics) {
     const file = destination(root, mcp.path);
     const stat = lstatSync(file, { throwIfNoEntry: false });
     const previousNames = Object.keys(previous);
-    if (!Object.keys(mcp.servers).length && (!stat || !previousNames.length))
+    const noWork = !Object.keys(mcp.servers).length && (!stat || !previousNames.length) && (stat || !policy.emitEmpty);
+    if (noWork && (!stat || policy.compatibility !== 'report'))
         return null;
     const before = stat ? readFileSync(file, 'utf8') : null;
     const doc = before === null ? mcp.schema ? { $schema: mcp.schema } : {} : JSON.parse(before);
@@ -299,18 +454,50 @@ function planMcp(root, mcp, previous, created) {
     const old = scope[key];
     if (old !== undefined && !object(old))
         throw new Error(`${mcp.path}: expected a server map`);
+    if (noWork)
+        return null;
     for (const name of previousNames) {
-        if (old && Object.hasOwn(old, name) && serverHash(old[name]) !== previous[name])
+        if (old && Object.hasOwn(old, name) && serverHash(old[name]) !== previous[name]
+            && !(policy.compatibility === 'report' && Object.hasOwn(mcp.servers, name) && sameServerConfig(old[name], mcp.servers[name])))
             throw new Error(`Edited MCP server: ${name}`);
     }
-    const merged = mergeMcpServers(scope, mcp.servers, previousNames, { key });
-    if (merged.kept.length)
-        throw new Error(`MCP server conflict: ${merged.kept.join(', ')}`);
+    const merged = mergeMcpServers(scope, mcp.servers, previousNames, { key, adoptIdentical: policy.unowned === 'adopt-identical' });
+    for (const server of merged.kept) {
+        const diagnostic = { code: 'foreign-server', target, path: mcp.path, server };
+        if (!policy.unowned || policy.unowned === 'refuse')
+            throw new LayoutMcpError(`MCP server conflict: ${server}`, diagnostic);
+        diagnostics.push(diagnostic);
+    }
     const next = mcp.section ? { ...doc, [mcp.section]: merged.document } : merged.document;
     const content = `${JSON.stringify(next, null, 2)}\n`;
     const emptyScope = Object.keys(merged.document).every(k => k === key) && !Object.keys(merged.servers).length;
-    const remove = !!stat && created && emptyScope && (!mcp.section
+    const ownedRemoval = policy.removeEmpty === 'owned-keys' && !mcp.section && previousNames.some(name => old && Object.hasOwn(old, name));
+    const remove = !!stat && policy.removeEmpty !== 'keep' && (created || ownedRemoval) && emptyScope && (!mcp.section
         || Object.keys(doc).every(k => k === mcp.section || (k === '$schema' && doc[k] === mcp.schema)));
     return { hashes: Object.fromEntries(merged.owned.map(name => [name, serverHash(mcp.servers[name])])), changed: !sameServerConfig(next, doc), content,
         created: !stat, remove };
+}
+function planAgentResets(root, document, previous) {
+    if (!Object.keys(document.servers).length && !previous.length)
+        return { owned: [] };
+    const file = destination(root, document.path);
+    const before = lstatSync(file, { throwIfNoEntry: false }) ? readFileSync(file, 'utf8') : null;
+    if (before === null && !Object.keys(document.servers).length)
+        return { owned: [] };
+    const input = before === null ? {} : JSON.parse(before);
+    if (!object(input))
+        throw new Error(`${document.path}: expected a configuration object`);
+    const old = input[document.key];
+    if (old !== undefined && !object(old))
+        throw new Error(`${document.path}: expected an agent map`);
+    const reset = { disabled: true };
+    for (const name of new Set([...previous, ...Object.keys(document.servers)])) {
+        if (old && Object.hasOwn(old, name) && !sameServerConfig(old[name], reset))
+            throw new Error(`${document.path}: edited agent reset: ${name}`);
+    }
+    const merged = mergeMcpServers(input, document.servers, previous, { key: document.key });
+    if (!Object.keys(merged.servers).length)
+        delete merged.document[document.key];
+    const content = sameServerConfig(input, merged.document) ? undefined : `${JSON.stringify(merged.document, null, 2)}\n`;
+    return { owned: merged.owned, content };
 }

@@ -12,13 +12,16 @@ export function fields(value, label, allowed) {
     }
     return result;
 }
+export const serverFields = ['command', 'args', 'env', 'url', 'headers', 'type', 'required', 'tool_timeout_sec', 'http_headers_helper'];
 export function preparedServer(value) {
-    const { name, definition, source } = fields(value, 'server', ['name', 'definition', 'source']);
+    const { name, definition, source, placeholders } = fields(value, 'server', ['name', 'definition', 'source', 'placeholders']);
     if (typeof name !== 'string' || !name.trim())
         throw new TypeError('Expected a server name');
     if (source !== undefined && typeof source !== 'string')
         throw new TypeError('Expected a source label');
-    const raw = fields(definition, 'definition', ['command', 'args', 'env', 'url', 'headers', 'type', 'required', 'tool_timeout_sec', 'http_headers_helper']);
+    if (placeholders !== undefined && placeholders !== 'native' && placeholders !== 'literal')
+        throw new TypeError('Invalid server placeholder policy');
+    const raw = fields(definition, 'definition', serverFields);
     const { command, args, url, type } = raw;
     const local = typeof command === 'string' && !!command.trim();
     const remote = typeof url === 'string' && !!url.trim();

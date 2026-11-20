@@ -207,7 +207,7 @@ export class Writer {
     return result;
   }
 
-  commit(beforeWrites?: () => void, atomic?: AtomicOutputs) {
+  validate() {
     if (this.#configuration.protectEdits) {
       for (const [rel, hash] of Object.entries(this.old.files as object)) {
         if (this.stagedRel.has(rel) || this.released.has(rel) || this.#group(rel) || !isInnerRelPath(rel)) continue;
@@ -226,6 +226,10 @@ export class Writer {
     if (this.conflicts.length) {
       this.#configuration.reject(this.#configuration.text.conflict(this.conflicts));
     }
+  }
+
+  commit(beforeWrites?: () => void, atomic?: AtomicOutputs) {
+    this.validate();
     beforeWrites?.();
     if (this.#configuration.artifacts) {
       this.layout = this.#configuration.artifacts.commit(this.root, this.staged, this.old);

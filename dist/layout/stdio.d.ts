@@ -17,9 +17,11 @@ export type ServerDefinition = (LocalServer | RemoteServer) & {
 };
 export interface ServerEntry {
     name: string;
-    definition: ServerDefinition;
+    definition: ServerDefinition | Readonly<Record<string, unknown>>;
     source?: string;
+    placeholders?: 'native' | 'literal';
 }
+export declare const serverFields: string[];
 export declare function preparedServer(value: unknown): readonly [string, Record<string, unknown>];
 export declare function stringList(args: unknown, message: string): string[];
 export {};

@@ -22,8 +22,8 @@ const target = 'claude';
 const path = mergedMcpPath.claude;
 export const adapter: LayoutAdapter = {
   target, skillsDir: '.claude/skills', agentsDir: '.claude/agents', ext: 'md',
-  renderAgent: transpileClaude, configPath: path,
+  renderAgent: transpileClaude, configPath: path, preservesServerSettings: true,
   renderMcp(servers) {
-    return { file: { path, content: renderMcpJson(servers) }, document: { path, key: 'mcpServers', servers } };
+    return { file: { path, content: renderMcpJson(servers) }, document: { path, key: 'mcpServers', servers }, empty: !Object.keys(servers).length };
   },
 };

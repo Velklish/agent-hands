@@ -14,12 +14,13 @@ function placeholderName(value) {
 function hasPlaceholder(value) {
     return String(value ?? '').includes('${');
 }
-export function renderCodexConfig(servers, { expandEnv = true, header = '# Generated configuration. Edit the source to change it.' } = {}) {
+export function renderCodexConfig(servers, { expandEnv: expandAll = true, literal = new Set(), header = '# Generated configuration. Edit the source to change it.' } = {}) {
     const blocks = [header];
     const dropped = [];
     const skipped = [];
     const unresolved = [];
     for (const [name, cfg0] of Object.entries(servers)) {
+        const expandEnv = expandAll || literal.has(name);
         const cfg = isObject(cfg0) ? cfg0 : {};
         const extra = Object.keys(cfg).filter((k) => !MAPPED_KEYS.has(k) && !IGNORED_KEYS.has(k));
         const lines = [`[mcp_servers.${tomlKey(name)}]`];
@@ -102,7 +103,7 @@ export function renderCodexConfig(servers, { expandEnv = true, header = '# Gener
             dropped.push({ name, keys: extra });
         blocks.push(lines.join('\n'));
     }
-    return { text: `${blocks.join('\n\n')}\n`, dropped, skipped, unresolved };
+    return { text: `${blocks.join('\n\n')}\n`, dropped, skipped, unresolved, empty: blocks.length === 1 };
 }
 export function codexTransportConflicts(servers, userServers) {
     const out = [];

@@ -2,7 +2,9 @@ import { createRequire } from 'node:module';
 import { isTarget, type LayoutAdapter, type Target } from './adapter.js';
 import { prepare, type LayoutInput } from './engine.js';
 export { applyLayout, readLayoutState, LayoutConflictError } from './engine.js';
-export type { LayoutFile, LayoutInput, LayoutPlan, LayoutResult, LayoutState, LayoutResource, LayoutNotice } from './engine.js';
+export type { LayoutFile, LayoutInput, LayoutPlan, LayoutResult, LayoutState, LayoutResource, LayoutNotice, LayoutApplyOptions, LayoutChangeSet } from './engine.js';
+export { LayoutMcpError } from './mcp-policy.js';
+export type { LayoutMcpPolicy, LayoutDiagnostic } from './mcp-policy.js';
 const load = createRequire(import.meta.url);
 const adapters = {
   claude: () => (load('./adapters/claude/index.js') as typeof import('./adapters/claude/index.js')).adapter,

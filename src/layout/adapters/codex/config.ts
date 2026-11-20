@@ -22,12 +22,13 @@ function hasPlaceholder(value: unknown) {
   return String(value ?? '').includes('${');
 }
 
-export function renderCodexConfig(servers: Record<string, unknown>, { expandEnv = true, header = '# Generated configuration. Edit the source to change it.' } = {}) {
+export function renderCodexConfig(servers: Record<string, unknown>, { expandEnv: expandAll = true, literal = new Set<string>() as ReadonlySet<string>, header = '# Generated configuration. Edit the source to change it.' } = {}) {
   const blocks = [header];
   const dropped = [];
   const skipped = [];
   const unresolved: { name: string; where: string; why: 'url' | 'embedded' | 'command' | 'argument' | 'renamed'; variable?: string }[] = [];
   for (const [name, cfg0] of Object.entries(servers)) {
+    const expandEnv = expandAll || literal.has(name);
     const cfg = isObject(cfg0) ? cfg0 : {};
     const extra = Object.keys(cfg).filter((k) => !MAPPED_KEYS.has(k) && !IGNORED_KEYS.has(k));
     const lines = [`[mcp_servers.${tomlKey(name)}]`];
@@ -93,7 +94,7 @@ export function renderCodexConfig(servers: Record<string, unknown>, { expandEnv 
     if (extra.length) dropped.push({ name, keys: extra });
     blocks.push(lines.join('\n'));
   }
-  return { text: `${blocks.join('\n\n')}\n`, dropped, skipped, unresolved };
+  return { text: `${blocks.join('\n\n')}\n`, dropped, skipped, unresolved, empty: blocks.length === 1 };
 }
 
 export function codexTransportConflicts(servers: Record<string, unknown> | null | undefined, userServers?: ReadonlyMap<string, CodexTransport> | null) {

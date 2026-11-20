@@ -15,8 +15,8 @@ const target = 'cursor';
 const path = mergedMcpPath.cursor;
 export const adapter: LayoutAdapter = {
   target, skillsDir: '.cursor/skills', agentsDir: '.cursor/agents', ext: 'md',
-  renderAgent: transpileCursor, configPath: path,
+  renderAgent: transpileCursor, configPath: path, preservesServerSettings: true,
   renderMcp(servers) {
-    return { file: { path, content: renderMcpJson(servers) }, document: { path, key: 'mcpServers', servers } };
+    return { file: { path, content: renderMcpJson(servers) }, document: { path, key: 'mcpServers', servers }, empty: !Object.keys(servers).length };
   },
 };
