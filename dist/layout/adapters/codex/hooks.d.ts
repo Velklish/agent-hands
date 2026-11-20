@@ -5,7 +5,7 @@ export declare const hooks: {
     empty: () => import("../../../hooks/format.js").Fields;
     entry: (owner: string, event: string, command: string, matcher?: string) => import("../../../hooks/hook-plan.js").HookEntry;
     preferences?: ((root: string, wanted: import("../../../index.js").WorkspacePreferences, legacy?: import("../../../index.js").WorkspacePreferences) => {
-        projectDocument: (text: string | null) => string | null;
+        projectDocument: (text: string | null, original: string | null) => string | null;
         change: () => import("../../../hooks/hook-journal.js").TargetChange;
     }) | undefined;
     preferencePath?: ((root: string) => string) | undefined;

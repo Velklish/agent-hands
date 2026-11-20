@@ -141,7 +141,7 @@ export function prepareHookDocument(spec) {
     const trusted = document !== null && previous.structure.digest === sha256(document);
     const structure = reconcileStructure(spec, trusted ? previous.structure : emptyStructure(), input, plan);
     const planned = plan.actions.every(a => a.kind === 'keep') ? document : JSON.stringify(plan.document, null, 2) + '\n';
-    let after = spec.projectDocument ? spec.projectDocument(planned) : planned;
+    let after = spec.projectDocument ? spec.projectDocument(planned, document) : planned;
     let createdDocument = after !== null && (document === null || (trusted && previous.createdDocument));
     const empty = ['{}', JSON.stringify(format(spec.target).empty())];
     if (createdDocument && !plan.next.length && !released.size && empty.includes(JSON.stringify(JSON.parse(after)))) {
@@ -150,7 +150,7 @@ export function prepareHookDocument(spec) {
     }
     structure.digest = after === null ? null : sha256(after);
     const next = { ...previous, createdDocument, structure, released: [...released], entries: plan.next };
-    return { changes: [{ file: spec.document, before: document, after }, { file: spec.state, before: state, after: state === null && !next.entries.length && !next.released.length ? null : JSON.stringify(next) }], shifted: plan.shifted, released: next.released };
+    return { changes: [{ file: spec.document, before: document, after }, { file: spec.state, before: state, after: state === null && !next.entries.length && !next.released.length && !createdDocument ? null : JSON.stringify(next) }], shifted: plan.shifted, released: next.released };
 }
 export function deliverHooks(scope, documents, warnShift) {
     const plans = documents.map(prepareHookDocument);
