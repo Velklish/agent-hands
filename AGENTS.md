@@ -28,6 +28,8 @@ Worker boundaries: change only the assigned branch or worktree; create new findi
 
 ## Harness adapters
 
+Expose one public API from the package root. Callers select a harness and use the same operations, input types and result types. Route the CLI through that API. The package chooses the implementation and keeps native formats and filesystem paths internal.
+
 Keep each supported harness in its own module. An adapter may use shared tools and typed contracts. Keep native formats, paths, diagnostics and regression fixtures with the adapter that owns them. A change specific to one harness must work without loading or modifying the other adapters.
 
 Test shared behavior once through the common interfaces for each applicable adapter. Test native behavior in the individual adapter suite. When adding an adapter or changing its boundary, verify that it runs independently and preserves the other harnesses' output and ownership data.
