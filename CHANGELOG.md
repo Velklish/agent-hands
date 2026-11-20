@@ -8,6 +8,7 @@
 - Allow an explicit account lock for hook batches and report native registration action and version in prepared transactions.
 - Release or restore individual hook owners while keeping other managed and foreign callbacks.
 - Inspect the verified project registration, including retained and stale installations.
+- Reconcile orphaned hook operations with explicit evidence for each protected target and any external participant.
 
 - Set up package metadata and the MIT license.
 - Add a pinned English Backslop workflow and the first development milestones.

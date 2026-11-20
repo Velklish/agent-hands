@@ -37,8 +37,8 @@ function exclusive<T>(scope: OperationScope, run: (journal: string) => T): T {
   } catch (error) { db.close(); throw error; }
 }
 
-function reference(scope: OperationScope, file: string, id: string) {
-  return JSON.stringify({ id,journal:file,pointers:scope.pointers,targets:scope.targets });
+function reference(scope: OperationScope, file: string, id: string, participant?: string | null) {
+  return JSON.stringify({ id,journal:file,pointers:scope.pointers,targets:scope.targets,participant });
 }
 export function withAccountLock<T>(home:string|undefined,scope:OperationScope,run:()=>T):T {
   if (!home) return run();
@@ -53,7 +53,11 @@ function checkReference(scope: OperationScope, file: string, raw: unknown): stri
   if (typeof raw === 'string') {
     let ref: unknown;
     try { ref = JSON.parse(raw); } catch { throw new Error('Invalid operation pointer'); }
-    if (ref && typeof ref === 'object' && 'id' in ref && typeof ref.id === 'string' && /^[0-9a-f-]{36}$/.test(ref.id) && reference(scope,file,ref.id) === raw) return raw;
+    if (ref && typeof ref === 'object' && 'id' in ref && typeof ref.id === 'string' && /^[0-9a-f-]{36}$/.test(ref.id)) {
+      const participant = 'participant' in ref ? ref.participant : undefined;
+      if ((participant === undefined || participant === null || (typeof participant === 'string' && participant.length)) &&
+          reference(scope,file,ref.id,participant) === raw) return raw;
+    }
   }
   throw new Error('Recovery scope mismatch');
 }
@@ -85,24 +89,55 @@ function clear(file: string, reference: string, pointers: readonly string[]) {
   unlinkSync(file);
 }
 
-export function reconcileOrphanedHookOperation(scope: OperationScope, changes: readonly TargetChange[]) {
-  exclusive(scope,file => {
-    if (snapshot(file) !== null || changes.some(change => change.observed)) throw new Error('Reconciliation requires a missing journal');
-    const refs = scope.pointers.map(snapshot);
-    const reference = checkReference(scope,file,refs.find(ref => ref !== null));
-    if (refs.some(ref => ref !== null && ref !== reference)) throw new Error('Unrecognized operation pointer');
+function orphanPointer(scope:OperationScope, file:string) {
+  if (snapshot(file) !== null) return null;
+  const refs = scope.pointers.map(snapshot);
+  const found = refs.find(ref => ref !== null);
+  if (found === undefined) return null;
+  const reference = checkReference(scope,file,found);
+  if (refs.some(ref => ref !== null && ref !== reference)) throw new Error('Unrecognized operation pointer');
+  const decoded = JSON.parse(reference) as {id:string;participant?:string|null};
+  return {reference,refs,...decoded};
+}
+export function inspectOrphanedHookOperation(scope:OperationScope) {
+  const orphan = orphanPointer(scope,path.join(scope.directory,'pending.json'));
+  return orphan && {id:orphan.id,participant:orphan.participant};
+}
+interface ReconciliationProof {
+  operationId: string;
+  participantSha256?: string;
+}
+function* reconcile(file:string,scope:OperationScope,changes:readonly TargetChange[],proof?:ReconciliationProof,peer?:WorkspaceParticipant):Generator<Promise<void>,void> {
+    const orphan = orphanPointer(scope,file);
+    if (!orphan || changes.some(change => change.observed)) throw new Error('Reconciliation requires a missing journal and surviving operation pointer');
+    const {reference,refs,id,participant} = orphan;
+    if (proof && (proof.operationId !== id || participant === undefined)) throw new Error('Reconciliation operation proof does not match');
+    if ((peer?.id ?? null) !== (participant ?? null)) throw new Error('Reconciliation requires the original transaction participant');
     const journal = parseHookJournal(JSON.stringify({ version:1,phase:'reconciling',targets:changes }),scope.targets);
     checkSnapshots(journal.targets,'before');
-    const save = (phase:'reconciling'|'aborted') => {
-      const encoded = JSON.stringify({ reference,journal:{ ...journal,phase } });
+    if (peer) {
+      if (!peer.verifyReconciliation || !proof?.participantSha256) throw new Error('Reconciliation requires verified participant evidence');
+      yield peer.verifyReconciliation(id,proof.participantSha256);
+      if (orphanPointer(scope,file)?.reference !== reference) throw new Error('Reconciliation operation pointer changed');
+      checkSnapshots(journal.targets,'before');
+    }
+    const save = (phase:'reconciling'|'committed') => {
+      const encoded = JSON.stringify({ reference,participant:peer?.id,journal:{ ...journal,phase } });
       if (Buffer.byteLength(encoded) > 4 * 1024 * 1024) throw new Error('Operation exceeds snapshot limit');
       writeAtomic(file,encoded,{ mode:0o600 });
     };
     save('reconciling');
     scope.pointers.forEach((pointer,i) => { if (refs[i] === null) writeAtomic(pointer,reference,{ mode:0o600 }); });
     finishReconciliation(journal);
-    save('aborted');
+    save('committed');
+    if (peer) yield peer.finish(id,'commit');
     clear(file,reference,scope.pointers);
+}
+export function reconcileOrphanedHookOperation(scope:OperationScope,changes:readonly TargetChange[],proof?:ReconciliationProof,peer?:WorkspaceParticipant) {
+  return exclusive(scope,file => {
+    const work = reconcile(file,scope,changes,proof,peer);
+    if (peer) return drive(work);
+    work.next();
   });
 }
 
@@ -118,11 +153,12 @@ export interface WorkspaceParticipant {
   readonly id: string;
   stage(operationId: string): Promise<void>;
   beforeCommit?(operationId: string): Promise<void>;
+  verifyReconciliation?(operationId: string, proofSha256: string): Promise<void>;
   finish(operationId: string, decision: 'commit'|'rollback'): Promise<void>;
 }
 function* commit(file: string,scope: OperationScope, changes: readonly TargetChange[], external: readonly ExternalHookChange[], peer?: WorkspaceParticipant): Generator<Promise<void>,void> {
     const id = randomUUID();
-    const ref = reference(scope,file,id);
+    const ref = reference(scope,file,id,peer?.id ?? null);
     assertHookOperationIdle(scope);
     let journal = parseHookJournal(JSON.stringify({ version:1, phase:'pending', targets:changes }),scope.targets);
     if (changes.some(c => c.observed) || external.length > 4 || external.some(step => !step.files.length || new Set(step.files).size !== step.files.length || step.files.some(f => !scope.targets.includes(f)))) throw new Error('Invalid external step scope');
@@ -203,12 +239,16 @@ function* recover(file:string,scope: OperationScope, moved?: { from:string; to:s
     const journal = { ...original,targets:original.targets.map(row => ({ ...row,file:move(row.file) })) };
     if (new Set(journal.targets.map(row => row.file)).size !== journal.targets.length) throw new Error('Overlapping recovery targets');
     if (scope.pointers.some(p => { const v = snapshot(p); return v !== null && v !== reference; })) throw new Error('Unrecognized operation pointer');
+    let decision: 'commit'|'rollback' = journal.phase === 'committed' ? 'commit' : 'rollback';
     if (!terminal) {
       if (journal.phase === 'pending') rollbackTargets(journal);
-      else finishReconciliation(journal);
-      writeAtomic(file,JSON.stringify({ reference,participant:peer?.id,journal:{ ...original,phase:'aborted' } }),{ mode:0o600 });
+      else {
+        finishReconciliation(journal);
+        decision = 'commit';
+      }
+      writeAtomic(file,JSON.stringify({ reference,participant:peer?.id,journal:{ ...original,phase:decision === 'commit' ? 'committed' : 'aborted' } }),{ mode:0o600 });
     }
-    if (peer) yield peer.finish(JSON.parse(reference).id,journal.phase === 'committed' ? 'commit' : 'rollback');
+    if (peer) yield peer.finish(JSON.parse(reference).id,decision);
     clear(file,reference,[...scope.pointers,...additionalPointers]);
 }
 export function recoverHookOperation(scope: OperationScope, moved?: { from:string; to:string }) {

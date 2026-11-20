@@ -3,12 +3,13 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { parseLayout, readLayoutState, applyLayout, runRepositoryCommand, type LayoutPlan, type NavigationOptions,
   planWorkspaceHooks, applyWorkspaceHooks, inspectWorkspaceHookOperation, inspectWorkspaceHookOwnership, recoverWorkspaceHooks,
-  type WorkspaceHookBatch, type WorkspaceHookInput, type WorkspaceHookScope } from 'agent-hands';
+  type WorkspaceHookBatch, type WorkspaceHookInput, type WorkspaceHookScope, type WorkspaceHookReconciliation } from 'agent-hands';
 
 const usage = `agent-hands <plan|apply|path|clone|fresh|zone> --config FILE [--state FILE] [TARGET]
 agent-hands <hooks-plan|hooks-apply|hooks-inspect|hooks-recover> --config FILE
 plan previews paths; apply requires a trusted state file outside the workspace.
 Hook commands use the same single-target or batch configuration.
+Use hooks-inspect --evidence for an orphaned operation and hooks-recover --reconcile FILE with verified evidence.
 path and zone are local reads; clone and fresh explicitly contact remotes.`;
 const json = (file: string): unknown => JSON.parse(readFileSync(file, 'utf8'));
 function record(value: unknown): value is Record<string, unknown> {
@@ -98,18 +99,19 @@ function hookConfig(file: string) {
 }
 
 function runHookCommand(command: HookCommand, args: string[]) {
-  const options = {config:{type:'string'}} as const;
+  const options = {config:{type:'string'},evidence:{type:'boolean'},reconcile:{type:'string'}} as const;
   const {values} = (() => {
     try { return parseArgs({args, options}); }
     catch { throw new HookCliError(usage); }
   })();
-  if (!values.config) throw new HookCliError(usage);
+  if (!values.config || (values.evidence && command !== 'hooks-inspect') || (values.reconcile !== undefined && command !== 'hooks-recover'))
+    throw new HookCliError(usage);
   const {input, targets, accountHome, registration} = hookConfig(values.config);
   if (command === 'hooks-plan') return planWorkspaceHooks(input);
   if (command === 'hooks-apply') return applyWorkspaceHooks(input);
 
   const {root} = input;
-  const pending = inspectWorkspaceHookOperation({root, accountHome});
+  const pending = inspectWorkspaceHookOperation({root,accountHome,evidence:values.evidence || values.reconcile !== undefined});
   if (command === 'hooks-inspect') {
     if (pending.pending || pending.blockedBy) return pending;
     const ownership = targets.map(target => {
@@ -121,12 +123,21 @@ function runHookCommand(command: HookCommand, args: string[]) {
 
   if (!pending.pending) {
     if (pending.blockedBy) throw new HookCliError('An account hook operation is pending in another workspace');
+    if (values.reconcile !== undefined) throw new HookCliError('No pending hook operation to reconcile');
     return {recovered:false};
   }
   if (pending.registration !== registration || Boolean(pending.registration || pending.accountScoped) !== Boolean(accountHome) ||
       pending.targets.length !== targets.length || !pending.targets.every(target => targets.some(selected => selected === target)))
     throw new HookCliError('Recovery requires the original hook targets and registration account. See hooks-inspect.');
-  recoverWorkspaceHooks({root, targets, accountHome});
+  let reconcile:WorkspaceHookReconciliation|undefined;
+  if (values.reconcile !== undefined) {
+    if (!pending.reconciliation?.supported) throw new HookCliError('Expected a verified orphaned hook operation');
+    if (pending.reconciliation.participantRequired)
+      throw new HookCliError('Use the JavaScript API with the original participant to reconcile this operation');
+    try { reconcile = json(values.reconcile) as WorkspaceHookReconciliation; }
+    catch { throw new HookCliError('Cannot read hook reconciliation evidence as JSON'); }
+  }
+  recoverWorkspaceHooks({root,targets,accountHome,reconcile});
   return {recovered:true};
 }
 

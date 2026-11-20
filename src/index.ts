@@ -38,3 +38,4 @@ export type { WorkspaceRegistrationInspection, WorkspaceRegistrationStatus } fro
 export type { WorkspaceParticipant } from './hooks/hook-operation.js';
 export { workspaceHookOutcome, type HookOutcome } from './hooks/outcome.js';
 export type { WorkspaceHook, WorkspaceHookBatch, WorkspaceHookBatchScope, WorkspaceHookInput, WorkspaceHookResult, WorkspaceHookScope } from './hooks/workspace.js';
+export type { WorkspaceHookEvidence, WorkspaceHookResolution, WorkspaceHookReconciliation, WorkspaceHookReconciliationEvidence } from './hooks/workspace.js';

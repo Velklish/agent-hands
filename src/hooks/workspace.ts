@@ -1,10 +1,12 @@
 import path from 'node:path';
 import { realpathSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
 import { isTarget, type Target } from '../layout/adapter.js';
 import { format } from './format.js';
-import { inspectHookOwnership, prepareHookDocument } from './hook-delivery.js';
-import { assertHookOperationIdle, commitHookOperation, commitWithParticipant, findHookOperation, recoverWithParticipant, recoverHookOperation, withAccountLock, type ExternalHookChange, type WorkspaceParticipant } from './hook-operation.js';
-import { snapshot } from './hook-journal.js';
+import { confirmedHookIntents, inspectHookOwnership, prepareHookDocument } from './hook-delivery.js';
+import { assertHookOperationIdle, commitHookOperation, commitWithParticipant, findHookOperation, inspectOrphanedHookOperation,
+  reconcileOrphanedHookOperation, recoverWithParticipant, recoverHookOperation, withAccountLock, type ExternalHookChange, type WorkspaceParticipant } from './hook-operation.js';
+import { snapshot, type TargetChange } from './hook-journal.js';
 import { sha256 } from '../layout/fs.js';
 import type { WorkspaceHookDiagnostic, WorkspacePreferences, WorkspaceRegistration, WorkspaceRegistrationPlan, WorkspaceRegistrationOutcome,
   WorkspaceRegistrationInspection, WorkspaceRegistrationStatus } from './options.js';
@@ -23,7 +25,26 @@ export interface WorkspaceHookInput extends WorkspaceHookScope {
 }
 export interface WorkspaceHookResult { changed: boolean; shifted: boolean; diagnostics?: readonly WorkspaceHookDiagnostic[] }
 export interface WorkspaceHookBatch { root: string; selections: readonly Omit<WorkspaceHookInput,'root'>[]; accountHome?:string }
-export interface WorkspaceHookBatchScope { root: string; targets: readonly Target[]; accountHome?:string }
+type CommandTarget = Exclude<Target,'opencode'>;
+const registrationParts = ['marketplaces','installations','localSettings','accountSettings','registration'] as const;
+type EvidencePart = 'document'|'ownership'|'preferences'|typeof registrationParts[number];
+export interface WorkspaceHookEvidence { target:CommandTarget; part:EvidencePart; sha256:string|null }
+export type WorkspaceHookResolution = {target:CommandTarget;action:'accept'} |
+  {target:CommandTarget;action:'release';owners:readonly string[]} |
+  {target:CommandTarget;action:'restore';hooks:readonly WorkspaceHook[]};
+export interface WorkspaceHookReconciliation {
+  operationId:string;
+  evidence:readonly WorkspaceHookEvidence[];
+  documents:readonly WorkspaceHookResolution[];
+  participantSha256?:string;
+  registration?:{marketplace:string;plugin:string;version:string;fingerprint:string};
+}
+export interface WorkspaceHookBatchScope {
+  root: string;
+  targets: readonly Target[];
+  accountHome?:string;
+  reconcile?:WorkspaceHookReconciliation;
+}
 
 function locations({root,target}: WorkspaceHookScope) {
   if (!isTarget(target) || target === 'opencode') throw new TypeError('Unsupported workspace command hook target');
@@ -35,7 +56,7 @@ function locations({root,target}: WorkspaceHookScope) {
   const state = path.join(local,target,'ownership.json');
   return {base,native,target,document,state,scope:{directory:path.join(local,'transaction'),pointers:[path.join(local,'pending')],targets:[document,state]}};
 }
-function prepareSelection(input: WorkspaceHookInput) {
+function prepareSelection(input: WorkspaceHookInput, reconciling = false) {
   if (Object.keys(input).some(k => !['root','target','enabled','hooks','mode','release','restore','legacy','preferences','registration'].includes(k))) throw new TypeError('Unknown workspace hook field');
   for (const list of [input.release,input.restore]) if (list !== undefined && (!Array.isArray(list) || list.some(v => typeof v !== 'string' || !v) || new Set(list).size !== list.length)) throw new TypeError('Invalid hook owner selection');
   const {base,native,target,document,state,scope} = locations(input);
@@ -52,7 +73,7 @@ function prepareSelection(input: WorkspaceHookInput) {
       !(input.release?.length || input.restore?.length) || intents.length !== (input.restore?.length ?? 0) ||
       intents.some(intent => !input.restore?.includes(intent.owner)) || new Set(intents.map(intent => intent.owner)).size !== intents.length))
     throw new TypeError('Ownership changes require only the selected release owners and restore definitions');
-  assertHookOperationIdle(scope);
+  if (!reconciling) assertHookOperationIdle(scope);
   let legacy;
   if (input.legacy && snapshot(state) === null) {
     const raw = snapshot(document);
@@ -95,7 +116,7 @@ function prepare(input: WorkspaceHookInput | WorkspaceHookBatch) {
     const pending = findAccountOperation(shared);
     if (pending && pending.pointers[0] !== shared.pointers[0]) throw new Error('Account hook operation pending in another project');
   }
-  const plans = [...selections].sort((a,b) => a.target.localeCompare(b.target)).map(prepareSelection);
+  const plans = [...selections].sort((a,b) => a.target.localeCompare(b.target)).map(selection => prepareSelection(selection));
   const changes = plans.flatMap(p => p.changes);
   const scope = accountScope({...plans[0].scope,targets:changes.map(row => row.file)},account);
   assertHookOperationIdle(scope);
@@ -166,9 +187,15 @@ export function inspectWorkspaceRegistration(input:WorkspaceRegistrationInspecti
   if (operation.pending || operation.blockedBy) return {status:'stale'};
   return format('claude').inspectProjectRegistration!({...input,root,accountHome});
 }
+export interface WorkspaceHookReconciliationEvidence {
+  operationId:string;
+  evidence:readonly WorkspaceHookEvidence[];
+  participantRequired:boolean;
+  supported:boolean;
+}
 export type PendingWorkspaceHooks = {pending:false;registration:false;blockedBy?:'another-project'} |
-  {pending:true;registration:boolean;targets:Target[];accountScoped?:true};
-export function inspectWorkspaceHookOperation({root,accountHome}:{root:string;accountHome?:string}):PendingWorkspaceHooks {
+  {pending:true;registration:boolean;targets:Target[];accountScoped?:true;reconciliation?:WorkspaceHookReconciliationEvidence};
+export function inspectWorkspaceHookOperation({root,accountHome,evidence}:{root:string;accountHome?:string;evidence?:boolean}):PendingWorkspaceHooks {
   if (!path.isAbsolute(root)) throw new TypeError('Absolute workspace path required');
   const account = canonicalAccountHome(accountHome);
   const base = realpathSync(root);
@@ -200,21 +227,106 @@ export function inspectWorkspaceHookOperation({root,accountHome}:{root:string;ac
   if (!targets.length) throw new Error('Unrecognized workspace operation targets');
   const registrationPath = targets.includes('claude') ? format('claude').registrationPath?.(base) : undefined;
   const registration = registrationPath !== undefined && recorded.targets.includes(registrationPath);
-  return {pending:true,registration,targets,...(!registration && recorded.pointers.length === 2 && {accountScoped:true})};
+  const accountScoped = recorded.pointers.length === 2;
+  let reconciliation;
+  if (evidence) {
+    if (accountScoped && !account) throw new Error('Expected the original hook account');
+    const context = recoveryContext(base,targets,accountScoped ? account : undefined,registration);
+    const orphan = inspectOrphanedHookOperation(context.scope);
+    if (orphan) reconciliation = {operationId:orphan.id,evidence:readEvidence(context.parts).map(row=>row.evidence),
+      participantRequired:typeof orphan.participant === 'string',supported:orphan.participant !== undefined};
+  }
+  return {pending:true,registration,targets,...(!registration && accountScoped && {accountScoped:true}),...(reconciliation && {reconciliation})};
+}
+function recoveryContext(root:string,targets:readonly Target[],account:string|undefined,registration:boolean) {
+  if (!targets.length || new Set(targets).size !== targets.length) throw new TypeError('Expected distinct hook targets');
+  const selections = [...targets].sort().map(target => locations({root,target}));
+  const parts = selections.flatMap(({base,native,target,document,state}) => {
+    const selected: {target:CommandTarget;part:EvidencePart;file:string}[] = [
+      {target,part:'document',file:document}, {target,part:'ownership',file:state},
+    ];
+    if (native.preferencePath) selected.push({target,part:'preferences',file:native.preferencePath(base)});
+    if (registration && account && native.registrationFiles) {
+      const files = native.registrationFiles(base,account);
+      for (let index = 0; index < registrationParts.length; index++)
+        selected.push({target,part:registrationParts[index],file:files[index]});
+    }
+    return selected;
+  });
+  return {scope:accountScope({...selections[0].scope,targets:parts.map(part=>part.file)},account),parts,selections};
+}
+function readEvidence(parts:ReturnType<typeof recoveryContext>['parts']) {
+  return parts.map(({file,target,part}) => {
+    const before = snapshot(file);
+    return {file,before,evidence:{target,part,sha256:before === null ? null : sha256(before)}};
+  });
+}
+function reconcileWorkspaceHooks(input:WorkspaceHookBatchScope,account:string|undefined,peer?:WorkspaceParticipant) {
+  const proof = input.reconcile;
+  if (!proof || !Array.isArray(proof.evidence) || !Array.isArray(proof.documents) ||
+      Object.keys(proof).some(key => !['operationId','evidence','documents','participantSha256','registration'].includes(key)))
+    throw new TypeError('Expected complete hook reconciliation evidence');
+  const pending = inspectWorkspaceHookOperation({root:input.root,accountHome:account});
+  if (!pending.pending || Boolean(pending.registration || pending.accountScoped) !== Boolean(account))
+    throw new Error('Expected a matching pending hook operation');
+  const {scope,parts,selections} = recoveryContext(input.root,input.targets,account,pending.registration);
+  const orphan = inspectOrphanedHookOperation(scope);
+  if (!orphan || orphan.participant === undefined || orphan.id !== proof.operationId)
+    throw new Error('Reconciliation operation proof does not match');
+  if (orphan.participant !== (peer?.id ?? null) ||
+      (peer && (!peer.verifyReconciliation || typeof proof.participantSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(proof.participantSha256))) ||
+      (!peer && proof.participantSha256 !== undefined)) throw new Error('Reconciliation requires verified evidence from the original participant');
+  const images = readEvidence(parts);
+  if (!isDeepStrictEqual(images.map(row=>row.evidence),proof.evidence)) throw new Error('Hook reconciliation evidence does not match protected targets');
+  if (proof.documents.length !== selections.length) throw new Error('Reconciliation requires every selected hook document');
+  if (pending.registration || proof.registration !== undefined) {
+    if (!pending.registration || !proof.registration || !account ||
+        Object.keys(proof.registration).some(key => !['marketplace','plugin','version','fingerprint'].includes(key)))
+      throw new Error('Reconciliation requires verified native registration');
+    const {marketplace,plugin,version,fingerprint} = proof.registration;
+    const actual = format('claude').inspectProjectRegistration!({root:selections[0].base,accountHome:account,
+      marketplace,plugin,expectedVersion:version,expectedFingerprint:fingerprint});
+    if (actual.status !== 'current' || actual.version !== version || actual.fingerprint !== fingerprint)
+      throw new Error('Reconciliation requires verified native registration');
+  }
+  const updates = new Map<string,TargetChange>();
+  for (const {base:root,target,document,state} of selections) {
+    const decisions = proof.documents.filter(row => row?.target === target);
+    if (decisions.length !== 1) throw new Error('Reconciliation requires one decision per hook target');
+    const decision: WorkspaceHookResolution = decisions[0];
+    const location = {target,document,state};
+    if (decision.action === 'accept') {
+      if (Object.keys(decision).length !== 2) throw new Error('Unexpected hook reconciliation fields');
+      const intents = confirmedHookIntents(location);
+      const result = prepareHookDocument({...location,intents});
+      if (result.changes.some(change=> change.before !== change.after))
+        throw new Error('Current hook ownership is inconsistent');
+      for (const change of result.changes) updates.set(change.file,change);
+      continue;
+    }
+    if (peer || pending.registration) throw new Error('An external operation requires acceptance of the verified current hook state');
+    if (Object.keys(decision).length !== 3) throw new Error('Unexpected hook reconciliation fields');
+    const common = {root,target,enabled:true,mode:'ownership'} as const;
+    const input = decision.action === 'release' && Array.isArray(decision.owners) ?
+      {...common,hooks:[],release:decision.owners} : decision.action === 'restore' && Array.isArray(decision.hooks) ?
+        {...common,hooks:decision.hooks,restore:decision.hooks.map(hook=>hook?.owner)} : undefined;
+    if (!input) throw new Error('Invalid hook reconciliation decision');
+    for (const change of prepareSelection(input,true).changes) updates.set(change.file,change);
+  }
+  const changes = images.map(({file,before}) => {
+    const update = updates.get(file);
+    if (update && update.before !== before) throw new Error('Protected target changed during reconciliation');
+    return update ?? {file,before,after:before};
+  });
+  return withAccountLock(account,scope,() => reconcileOrphanedHookOperation(scope,changes,proof,peer));
 }
 export function recoverWorkspaceHooks(input: RecoveryScope): void;
 export function recoverWorkspaceHooks(input: RecoveryScope, participant: WorkspaceParticipant): Promise<void>;
 export function recoverWorkspaceHooks(input: RecoveryScope, participant?: WorkspaceParticipant): void | Promise<void> {
   const account = 'targets' in input ? canonicalAccountHome(input.accountHome) : undefined;
+  if ('targets' in input && input.reconcile !== undefined) return reconcileWorkspaceHooks(input,account,participant);
   const registration = account && inspectWorkspaceHookOperation({root:input.root,accountHome:account}).registration;
-  const scopes = ('targets' in input ? [...input.targets].sort() : [input.target]).map(target => {
-    const {scope,base,native} = locations({root:input.root,target});
-    if (native.preferencePath) scope.targets.push(native.preferencePath(base));
-    if (account && registration && native.registrationFiles) scope.targets.push(...native.registrationFiles(base,account));
-    return scope;
-  });
-  if (!scopes.length) throw new TypeError('Expected hook targets');
-  const scope = accountScope({...scopes[0],targets:scopes.flatMap(s => s.targets)},account);
+  const {scope} = recoveryContext(input.root,'targets' in input ? input.targets : [input.target],account,Boolean(registration));
   if (participant) return withAccountLock(account,scope,() => recoverWithParticipant(scope,participant));
   withAccountLock(account,scope,() => recoverHookOperation(scope));
 }

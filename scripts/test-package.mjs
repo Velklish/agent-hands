@@ -70,6 +70,30 @@ const rename=fs.renameSync;fs.renameSync=(from,to)=>{rename(from,to);if(to===pat
   assert.deepEqual(hook('recover'),{recovered:false});
   assert.deepEqual(hook('apply','single.json'),{changed:true,shifted:false});
   assert.deepEqual(hook('inspect','single.json'),{pending:false,registration:false,ownership:[{target:'codex',ownership:{owners:1,released:0}}]});
+  batch.selections[0].hooks[0].command = 'echo verified-orphan';
+  write(hookConfig,JSON.stringify(batch));
+  assert.throws(()=>node('--import','./interrupt.mjs','node_modules/agent-hands/bin/agent-hands.js','hooks-apply','--config','hooks.json'),{status:73});
+  const hookState = path.join(batch.root,'.agent-hands/hooks');
+  const pointer = read(path.join(hookState,'pending'));
+  fs.unlinkSync(path.join(hookState,'transaction/pending.json'));
+  assert.throws(()=>hook('recover'),{status:1});
+  assert.equal(hook('inspect').reconciliation,undefined);
+  const {reconciliation:{operationId,evidence,participantRequired,supported}} = JSON.parse(cli('hooks-inspect','--config','hooks.json','--evidence'));
+  assert.equal(participantRequired,false);
+  assert.equal(supported,true);
+  assert.equal(evidence.length,4);
+  const reconcile = proof => {
+    write(path.join(project,'proof.json'),JSON.stringify(proof));
+    return JSON.parse(cli('hooks-recover','--config','hooks.json','--reconcile','proof.json'));
+  };
+  const documents = [{target:'codex',action:'release',owners:['node-version']},{target:'cursor',action:'accept'}];
+  assert.throws(()=>reconcile({operationId,evidence:evidence.slice(1),documents}),{status:1});
+  assert.equal(read(path.join(hookState,'pending')),pointer);
+  assert.throws(()=>reconcile({operationId,evidence,documents:documents.map(({target})=>({target,action:'accept'}))}),{status:1});
+  assert.equal(read(path.join(hookState,'pending')),pointer);
+  assert.deepEqual(reconcile({operationId,evidence,documents}),{recovered:true});
+  assert.match(read(path.join(batch.root,'.codex/hooks.json')),/verified-orphan/);
+  assert.deepEqual(hook('inspect','single.json'),{pending:false,registration:false,ownership:[{target:'codex',ownership:{owners:0,released:1}}]});
   const invalid = path.join(project,'malformed-config-value.json');
   write(invalid,'{"example-private-value": unsupported}');
   assert.throws(()=>hook('plan',invalid),error=>error.status===1 &&
@@ -80,7 +104,7 @@ const rename=fs.renameSync;fs.renameSync=(from,to)=>{rename(from,to);if(to===pat
   assert.throws(()=>hook('apply','single.json'),error=>error.status===1 && !error.stdout &&
     !/invalid-private-setting|example-private-value|hooks-workspace/.test(error.stderr));
   run('python3',['-B',path.join(pkg,'profiles/my-voice/skills/my-voice-calibrate/scripts/collect.py'),'--help'],project);
-  write(path.join(project,'consumer.mts'),`import {planLayout,applyLayout,createNavigation,createOutputWriter,artifactLayout,collectSubagents,prepareWorkspaceHooks,planWorkspaceHooks,type OutputMutations,type LayoutInput,type LayoutResult,type RepositoryResolution,type WorkspaceHookBatch,type WorkspaceHookResult} from 'agent-hands';
+  write(path.join(project,'consumer.mts'),`import {planLayout,applyLayout,createNavigation,createOutputWriter,artifactLayout,collectSubagents,prepareWorkspaceHooks,planWorkspaceHooks,inspectWorkspaceRegistration,recoverWorkspaceHooks,type OutputMutations,type LayoutInput,type LayoutResult,type RepositoryResolution,type WorkspaceHookBatch,type WorkspaceHookResult,type WorkspaceHookReconciliation} from 'agent-hands';
 const input: LayoutInput = {root:'/work',target:'cursor',rules:[],servers:[],subagents:[],skills:[]};
 for(const target of ['cursor','codex'] as const){const result:Promise<LayoutResult>=applyLayout(planLayout({...input,target}));void result;}
 const nav=createNavigation({root:input.root,routeHost:()=>({zone:'repos',gitlab:true})});
@@ -92,6 +116,10 @@ const artifacts=artifactLayout(['output'],{root:'/store',artifacts:'/store/bundl
 const writer=createOutputWriter(input.root,{files:{}},{artifacts});
 const mutations:OutputMutations={write(){},remove(){},bind(){}};
 writer.apply(undefined,undefined,mutations);collectSubagents([]);
+const inspection=inspectWorkspaceRegistration({root:input.root,accountHome:'/home',marketplace:'example',plugin:'example'});
+if(inspection.status==='current'){const fingerprint:string=inspection.fingerprint;void fingerprint;}
+const reconcile:WorkspaceHookReconciliation={operationId:'fixture',evidence:[],documents:[{target:'codex',action:'accept'}]};
+recoverWorkspaceHooks({root:input.root,targets:['codex'],reconcile});
 // @ts-expect-error Commands are strings.
 planWorkspaceHooks({root:input.root,target:'codex',enabled:true,hooks:[{owner:'test',event:'SessionStart',command:1}]});
 // @ts-expect-error A targeted scan accepts namespace strings only.

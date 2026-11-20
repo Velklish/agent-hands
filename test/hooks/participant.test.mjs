@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -98,6 +99,26 @@ if (!process.argv[2]) test('explicit account lock is shared with workspace regis
   assert.deepEqual(result.registrations,[{target:'claude',status:'current',version,previousVersion:version}]);
   for (const [file,bytes] of unchanged.slice(0,2)) assert.deepEqual(fs.readFileSync(file),bytes);
   assert.deepEqual(JSON.parse(fs.readFileSync(settings)).env,{FOREIGN:'preserve'});
+  const child = spawnSync(process.execPath,['--input-type=module','-e',`
+    import {applyPreparedWorkspaceHooks,prepareWorkspaceHooks} from 'agent-hands';
+    await applyPreparedWorkspaceHooks(prepareWorkspaceHooks(JSON.parse(process.argv[1])),{
+      id:'native-fixture',async stage(){process.exit(78);},async finish(){}
+    });
+  `,JSON.stringify(project)],{encoding:'utf8'});
+  assert.equal(child.status,78,child.stderr);
+  const pointer = path.join(root,'.agent-hands/hooks/pending');
+  const saved = fs.readFileSync(pointer);
+  fs.unlinkSync(path.join(home,'.agent-hands/account-hooks/transaction/pending.json'));
+  fs.unlinkSync(path.join(root,'.agent-hands/hooks/claude/registration.json'));
+  const pending = inspectWorkspaceHookOperation({root,accountHome:home,evidence:true});
+  assert.equal(pending.registration,true);
+  const proof = {operationId:pending.reconciliation.operationId,evidence:pending.reconciliation.evidence,
+    documents:[{target:'claude',action:'accept'}],participantSha256:fingerprint,
+    registration:{marketplace,plugin,version,fingerprint}};
+  const peer = {id:'native-fixture',stage:async()=>assert.fail(),finish:async()=>assert.fail(),verifyReconciliation:async()=>assert.fail()};
+  assert.throws(() => recoverWorkspaceHooks({root,targets:['claude'],accountHome:home,reconcile:proof},peer),/requires verified native registration/);
+  assert.deepEqual(fs.readFileSync(pointer),saved);
+  for (const [file,bytes] of unchanged.slice(0,2)) assert.deepEqual(fs.readFileSync(file),bytes);
 });
 
 function lateInput(root, command = 'updated') {
@@ -173,3 +194,49 @@ if (!process.argv[2]) for (const phase of ['reject','kill']) {
     assert.equal(inspectWorkspaceHookOperation({root}).pending,false);
   });
 }
+
+if (!process.argv[2] && process.platform !== 'win32') test('orphan accepts only checked targets and the original participant candidate', async t => {
+  const root=fs.realpathSync(scratch(t));
+  for (const name of ['first','second']) fs.mkdirSync(path.join(root,name));
+  const manifest = put(root,'manifest','first'), peerJournal = path.join(root,'peer.json');
+  const alias = path.join(root,'alias');
+  fs.symlinkSync('first',alias);
+  applyWorkspaceHooks(lateInput(root,'original'));
+  const child = spawnSync(process.execPath,[file,'late-child',root],{encoding:'utf8',timeout:10_000});
+  assert.equal(child.signal,'SIGKILL',child.stderr);
+  const pointer = path.join(root,'.agent-hands/hooks/pending');
+  const recorded = fs.readFileSync(pointer);
+  fs.unlinkSync(path.join(root,'.agent-hands/hooks/transaction/pending.json'));
+  const {targets,reconciliation} = inspectWorkspaceHookOperation({root,evidence:true});
+  assert.equal(reconciliation.supported,true);
+  assert.equal(reconciliation.participantRequired,true);
+  assert.equal(reconciliation.evidence.length,5);
+  const decisions = [];
+  const digest = () => createHash('sha256').update(fs.readFileSync(peerJournal)).digest('hex');
+  const candidate = images(root);
+  let checked = 0;
+  const peer = {...lateParticipant(root,'recover',decisions),async verifyReconciliation(operationId,expected) {
+    checked++;
+    assert.equal(operationId,JSON.parse(fs.readFileSync(peerJournal)).id);
+    if (digest() !== expected) throw new Error('Participant evidence does not match');
+    assert.deepEqual(images(root),candidate);
+    assert.equal(fs.readFileSync(manifest,'utf8'),'late');
+    assert.equal(fs.readlinkSync(alias),'second');
+  }};
+  const proof = {operationId:reconciliation.operationId,evidence:reconciliation.evidence,
+    documents:targets.map(target=>({target,action:'accept'})),participantSha256:digest()};
+  const run = (reconcile,participant) => recoverWorkspaceHooks({root,targets,reconcile},participant);
+  assert.throws(()=>run({...proof,evidence:proof.evidence.slice(1)},peer),/does not match protected targets/);
+  assert.throws(()=>run(proof,{...peer,id:'unrelated'}),/original participant/);
+  assert.equal(checked,0);
+  await assert.rejects(run({...proof,participantSha256:'0'.repeat(64)},peer),/Participant evidence does not match/);
+  assert.deepEqual(fs.readFileSync(pointer),recorded);
+  assert.deepEqual(images(root),candidate);
+  assert.deepEqual(decisions,[]);
+  await run(proof,peer);
+  assert.equal(checked,2);
+  assert.deepEqual(decisions,['commit']);
+  assert.equal(fs.existsSync(peerJournal),false);
+  assert.equal(fs.existsSync(pointer),false);
+  assert.deepEqual(images(root),candidate);
+});

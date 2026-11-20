@@ -8,6 +8,13 @@ Use the same JSON file with `hooks-plan`, `hooks-apply`, `hooks-inspect` and `ho
 
 If inspection shows a pending operation, use `hooks-recover` with the same workspace root and original target selection. Include the original registration account if the operation used native registration. Recovery reports whether an operation was recovered. A transaction created with an external participant requires recovery through the JavaScript API and the original participant.
 
+If the journal is missing but its pointer remains, `hooks-inspect --config FILE --evidence`
+reports the protected target identifiers and their current digests. Verify each digest against
+the state you intend to keep. Pass `hooks-recover --config FILE --reconcile PROOF.json` a proof
+with the returned `operationId` and complete `evidence` array, and one `documents` decision per
+target. A decision is `{target, action: "accept"}`, `{target, action: "release", owners}` or
+`{target, action: "restore", hooks}`. Use ordinary recovery when the journal is still present.
+
 ## From JavaScript
 
 Import the hook operations from `agent-hands`. Select `claude`, `codex` or `cursor`. OpenCode uses a plugin lifecycle and does not support this command-hook operation. Layout delivery does not enable hooks.
@@ -50,7 +57,16 @@ The prepared plan's `registrations` lists the harness, requested version, known 
 - Optional `await beforeCommit(operationId)` runs after native registration and hook writes, before the journal commits. Write the reversible marker or manifest here if it depends on native success. A rejection rolls back the protected documents and calls `finish` with `rollback`.
 - `await finish(operationId, 'commit' | 'rollback')` completes the recorded decision. It must be idempotent and able to handle an interrupted stage, including a rollback before the first participant write.
 
-The package journals the operation before staging and records the decision before calling `finish`. On restart, call `inspectWorkspaceHookOperation({root, accountHome?})`. Supply the account home if registration was possible: its journal can already exist before the project pointer is published. Account snapshots stay in the account's private transaction directory. If another project holds the account journal, inspection returns `pending: false` and `blockedBy: 'another-project'` without identifying that project. Resume recovery from the project where the transaction began. If pending, call `recoverWorkspaceHooks({root, targets, accountHome?}, participant)` with the recorded target selection and original participant. Include the original account home only for a registration transaction. Recovery refuses unknown file contents; it does not overwrite a concurrent edit. A missing journal or unrecognized partial native write requires reconciliation before retry. A participant with only in-memory undo cannot provide restart recovery.
+The package journals the operation before staging and records the decision before calling `finish`. On restart, call `inspectWorkspaceHookOperation({root, accountHome?})`. Supply the account home if registration was possible: its journal can already exist before the project pointer is published. Account snapshots stay in the account's private transaction directory. If another project holds the account journal, inspection returns `pending: false` and `blockedBy: 'another-project'` without identifying that project. Resume recovery from the project where the transaction began. If pending, call `recoverWorkspaceHooks({root, targets, accountHome?}, participant)` with the recorded target selection and original participant. Include the original account home for registration and explicit account-scoped batches. Recovery refuses unknown file contents; it does not overwrite a concurrent edit. A missing journal or unrecognized partial native write requires reconciliation before retry. A participant with only in-memory undo cannot provide restart recovery.
+
+For a lost journal with a verified surviving pointer, pass the complete proof as `reconcile`
+in the batch recovery scope. If a participant was recorded, it must implement the read-only
+`verifyReconciliation(operationId, proofSha256)` and verify its complete durable candidate,
+including any final manifest or marker. Supply its evidence digest as `participantSha256`.
+Participant reconciliation accepts the verified current state and finishes with `commit`.
+For native registration, use `accept` and include the verified
+`registration: {marketplace, plugin, version, fingerprint}`. Reconciliation refuses stale or
+incomplete registration. It cannot reconstruct lost snapshots or replay native registration.
 
 ## Project preferences and registration
 
