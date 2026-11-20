@@ -136,14 +136,14 @@ export function registrationEvidence(request: RegistrationRequest, project: stri
       return isDeepStrictEqual(previousMarkets,markets) && before.installations === after.installations;
     }
     if (before.marketplaces !== after.marketplaces) return false;
-    const load = (raw: string | null) => {
+    const readInstallations = (raw: string | null) => {
       if (raw === null) return {};
       const doc = registry(raw);
       if (!keys(doc,['version','plugins']) || doc.version !== 2 || !record(doc.plugins)) throw new Error('Unknown installation registry');
       return doc.plugins;
     };
-    const previous = load(before.installations);
-    const installed = load(after.installations);
+    const previous = readInstallations(before.installations);
+    const installed = readInstallations(after.installations);
     const subject = `${request.plugin}@${request.marketplace}`;
     const rows = installed[subject];
     const ours = (r: unknown) => record(r) && r.scope === 'project' && r.projectPath === project;

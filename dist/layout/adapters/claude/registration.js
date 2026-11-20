@@ -150,7 +150,7 @@ export function registrationEvidence(request, project, version, before, after, e
         }
         if (before.marketplaces !== after.marketplaces)
             return false;
-        const load = (raw) => {
+        const readInstallations = (raw) => {
             if (raw === null)
                 return {};
             const doc = registry(raw);
@@ -158,8 +158,8 @@ export function registrationEvidence(request, project, version, before, after, e
                 throw new Error('Unknown installation registry');
             return doc.plugins;
         };
-        const previous = load(before.installations);
-        const installed = load(after.installations);
+        const previous = readInstallations(before.installations);
+        const installed = readInstallations(after.installations);
         const subject = `${request.plugin}@${request.marketplace}`;
         const rows = installed[subject];
         const ours = (r) => record(r) && r.scope === 'project' && r.projectPath === project;

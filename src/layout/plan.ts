@@ -1,8 +1,8 @@
 import { createRequire } from 'node:module';
 import { isTarget, type LayoutAdapter, type Target } from './adapter.js';
 import { prepare, type LayoutInput } from './engine.js';
-export { applyLayout, readLayoutState } from './engine.js';
-export type { LayoutFile, LayoutInput, LayoutPlan, LayoutResult, LayoutState } from './engine.js';
+export { applyLayout, readLayoutState, LayoutConflictError } from './engine.js';
+export type { LayoutFile, LayoutInput, LayoutPlan, LayoutResult, LayoutState, LayoutResource, LayoutNotice } from './engine.js';
 const load = createRequire(import.meta.url);
 const adapters = {
   claude: () => (load('./adapters/claude/index.js') as typeof import('./adapters/claude/index.js')).adapter,

@@ -13,5 +13,6 @@
 - Expose group routing, checkout preflight, targeted inspection, typed diagnostics and explicit Git ref operations from the root API.
 - Accept valid relative checkout paths from nested working directories even when the same argument is not a valid namespace.
 - Plan and apply selected workspace resources with per-target ownership and independent harness adapters.
+- Report logical owners and relative paths in prepared layout plans for host-managed delivery.
 - Include portable English rules, a workspace template and an optional question-writing skill.
 - Package the CLI, root JavaScript API, declarations, runtime entrypoint helpers and public assets for installation from an exact Git tag.
