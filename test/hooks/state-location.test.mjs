@@ -80,11 +80,15 @@ test('move confirmed receipts in both directions without changing native files',
   }
 });
 
-for (const stateLocation of ['default','agents']) test(`recover ${stateLocation} account state before migrating it`,t=>{
+for (const stateLocation of ['default','agents']) for (const published of [false,true]) test(
+  `recover ${stateLocation} account state ${published ? 'after' : 'before'} the workspace pointer is published`,t=>{
   const base = fs.realpathSync(scratch(t)), root = path.join(base,'project'), accountHome = path.join(base,'account');
   fs.mkdirSync(root); fs.mkdirSync(accountHome);
   const input = {root,accountHome,stateLocation,selections:[codex]};
-  const journal = path.join(accountHome,'.agent-hands/account-hooks/transaction/pending.json');
+  const accountState = path.join(accountHome,'.agent-hands/account-hooks');
+  const journal = path.join(accountState,'transaction/pending.json');
+  const accountPointer = path.join(accountState,'pending');
+  const localPointer = path.join(root,stateLocation === 'agents' ? nested : original,'pending');
   const child = spawnSync(process.execPath,['--input-type=module','-e',`
     import fs from 'node:fs';
     import {syncBuiltinESMExports} from 'node:module';
@@ -93,17 +97,27 @@ for (const stateLocation of ['default','agents']) test(`recover ${stateLocation}
     fs.renameSync=(from,to)=>{rename(from,to);if(to===process.argv[2])process.exit(73);};
     syncBuiltinESMExports();
     applyWorkspaceHooks(JSON.parse(process.argv[1]));
-  `,JSON.stringify(input),journal],{encoding:'utf8'});
+  `,JSON.stringify(input),published ? accountPointer : journal],{encoding:'utf8'});
   assert.equal(child.status,73,child.stderr);
   const before = fs.readFileSync(journal);
-  const local = path.join(root,stateLocation === 'agents' ? nested : original);
-  assert.equal(fs.existsSync(path.join(local,'pending')),false);
+  const pointer = published ? fs.readFileSync(localPointer) : null;
+  if (published) assert.deepEqual(fs.readFileSync(accountPointer),pointer);
+  else {
+    assert.equal(fs.existsSync(localPointer),false);
+    assert.equal(fs.existsSync(accountPointer),false);
+  }
   assert.deepEqual(inspectWorkspaceHookOperation(input),{pending:true,registration:false,targets:['codex'],accountScoped:true});
   const to = stateLocation === 'agents' ? 'default' : 'agents';
   assert.throws(()=>migrateWorkspaceHookState({root,accountHome,stateLocation:to}),/Unfinished hook operation/);
   assert.deepEqual(fs.readFileSync(journal),before);
+  if (published) {
+    assert.deepEqual(fs.readFileSync(localPointer),pointer);
+    assert.deepEqual(fs.readFileSync(accountPointer),pointer);
+  }
   recoverWorkspaceHooks({root,accountHome,stateLocation,targets:['codex']});
   assert.equal(fs.existsSync(journal),false);
+  assert.equal(fs.existsSync(localPointer),false);
+  assert.equal(fs.existsSync(accountPointer),false);
   assert.equal(fs.existsSync(path.join(root,'.codex/hooks.json')),false);
   assert.deepEqual(migrateWorkspaceHookState({root,accountHome,stateLocation:to}),{changed:true});
 });

@@ -58,17 +58,24 @@ confirmed receipts in a single directory rename under the workspace writer lock.
 locations must be on the same filesystem. If any account-scoped operation may exist, supply
 its original `accountHome`. The operation locks that account as well. Standalone projects
 that have only used workspace transactions can omit `accountHome`.
+Without it, migration can only check the workspace for pending work. A journal published
+in an account before the workspace pointer exists is visible only with the original account.
 
 The move refuses a pending journal or pointer, conflicting locations, or unrecognized state.
-Recover pending work from the original location before retrying. `{changed: false}` means
-there was no tree to move. A retry can clean up the empty previous directory after an
-interrupted move. Planning and inspection only read the selected location. They
-refuse a competing tree so they cannot mistake missing receipts for unowned hooks.
+Recover pending work in the original location, using the original account where applicable,
+before retrying. If a Claude plugin registration receipt exists, inspection must report
+`current` there before it can be moved. Resolve any registry mismatch in the original location.
+
+`{changed: false}` means there was no tree to move. A retry can clean up the empty previous
+directory after an interrupted move. Planning and inspection only read the selected location.
+They refuse a competing tree so they cannot mistake missing receipts for unowned hooks.
+Pass an explicit workspace `root` to repository navigation after moving to `"agents"` if
+you previously relied on discovery from `.agent-hands/`.
 
 To roll back to v0.1.0, stop writers, recover pending work, then run the v0.1.1 migration
 with `stateLocation: "default"` and the same account. Switch package versions only after
-that succeeds. A v0.1.0 process cannot discover the nested location, and switching versions
-alone does not move or reattach its receipts.
+that succeeds, then use the v0.1.0 configuration without `stateLocation`. A v0.1.0 process
+cannot discover the nested location, and switching versions alone does not reattach its receipts.
 
 ## Composing a transaction
 
