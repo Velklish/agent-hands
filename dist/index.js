@@ -17,5 +17,5 @@ export { localStatus, countZone, offDefault, defaultUnknown, aheadUnknown } from
 export { enterEntrypoint, entrypointArgv, parseRuntimeTarget, supportsNode } from './runtime.js';
 export { bundledAssets } from './resources.js';
 export { applyWorkspaceHooks, applyPreparedWorkspaceHooks, inspectWorkspaceHookOperation, inspectWorkspaceHookOwnership, planWorkspaceHooks, prepareWorkspaceHooks, recoverWorkspaceHooks } from './hooks/workspace.js';
-export { inspectWorkspaceRegistration } from './hooks/workspace.js';
+export { inspectWorkspaceRegistration, migrateWorkspaceHookState } from './hooks/workspace.js';
 export { workspaceHookOutcome } from './hooks/outcome.js';

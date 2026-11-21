@@ -4,10 +4,10 @@ Use one CLI or JavaScript import to find repositories and deliver selected rules
 
 ## Install
 
-Requires Node.js 26 or newer and Git. Once the `v0.1.0` release tag is published:
+Requires Node.js 26 or newer and Git. Once the `v0.1.1` release tag is published:
 
 ```sh
-npm install --save-exact git+https://github.com/Velklish/agent-hands.git#v0.1.0
+npm install --save-exact git+https://github.com/Velklish/agent-hands.git#v0.1.1
 ```
 
 The tag includes compiled ESM and TypeScript declarations. No build step, global CLI, Git hook or npm release is required. The consuming project's lockfile records the resolved commit.

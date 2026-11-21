@@ -33,9 +33,9 @@ function fields(wanted:WorkspacePreferences) {
   if (wanted.disabledSkills) next.skillOverrides = Object.fromEntries(wanted.disabledSkills.map(k => [k,'off']));
   return next;
 }
-export function preferencePath(root:string) { return path.join(root,'.agent-hands/hooks/claude/preferences.json'); }
-export function preferences(root:string,wanted:WorkspacePreferences,legacy?:WorkspacePreferences) {
-  const file = preferencePath(root), before = snapshot(file);
+export function preferencePath(local:string) { return path.join(local,'claude','preferences.json'); }
+export function preferences(local:string,wanted:WorkspacePreferences,legacy?:WorkspacePreferences) {
+  const file = preferencePath(local), before = snapshot(file);
   let saved:unknown;
   if (before === null) saved = fields(legacy ?? {});
   else {

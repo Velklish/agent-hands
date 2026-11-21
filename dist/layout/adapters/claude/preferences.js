@@ -40,9 +40,9 @@ function fields(wanted) {
         next.skillOverrides = Object.fromEntries(wanted.disabledSkills.map(k => [k, 'off']));
     return next;
 }
-export function preferencePath(root) { return path.join(root, '.agent-hands/hooks/claude/preferences.json'); }
-export function preferences(root, wanted, legacy) {
-    const file = preferencePath(root), before = snapshot(file);
+export function preferencePath(local) { return path.join(local, 'claude', 'preferences.json'); }
+export function preferences(local, wanted, legacy) {
+    const file = preferencePath(local), before = snapshot(file);
     let saved;
     if (before === null)
         saved = fields(legacy ?? {});

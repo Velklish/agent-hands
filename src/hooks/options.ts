@@ -1,3 +1,8 @@
+export type WorkspaceHookStateLocation = 'default' | 'agents';
+export interface WorkspaceHookStateScope {
+  root: string;
+  stateLocation?: WorkspaceHookStateLocation;
+}
 export interface WorkspaceHookDiagnostic {
   readonly code: 'preference-conflict';
   readonly target: 'claude';
@@ -28,8 +33,7 @@ export interface WorkspaceRegistrationPlan {
 export interface WorkspaceRegistrationOutcome extends Omit<WorkspaceRegistrationPlan, 'action'> {
   status: 'installed' | 'updated' | 'current';
 }
-export interface WorkspaceRegistrationInspection {
-  root: string;
+export interface WorkspaceRegistrationInspection extends WorkspaceHookStateScope {
   accountHome: string;
   marketplace: string;
   plugin: string;

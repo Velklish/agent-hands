@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.1.1
+
+- Select where workspace hook receipts and journals live and explicitly migrate existing state between the two supported locations.
+
+## 0.1.0
 
 - Plan and apply command hooks across selected harnesses with explicit enablement, callback ownership, native registration checks and recoverable batch transactions. Require a new plugin version when the payload changes.
 - Run hook planning, application, inspection and recovery from the installed CLI with an explicit configuration and redacted diagnostics.

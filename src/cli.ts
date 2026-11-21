@@ -3,10 +3,10 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { parseLayout, readLayoutState, applyLayout, runRepositoryCommand, type LayoutPlan, type NavigationOptions,
   planWorkspaceHooks, applyWorkspaceHooks, inspectWorkspaceHookOperation, inspectWorkspaceHookOwnership, recoverWorkspaceHooks,
-  type WorkspaceHookBatch, type WorkspaceHookInput, type WorkspaceHookScope, type WorkspaceHookReconciliation } from 'agent-hands';
+  migrateWorkspaceHookState, type WorkspaceHookBatch, type WorkspaceHookInput, type WorkspaceHookScope, type WorkspaceHookReconciliation } from 'agent-hands';
 
 const usage = `agent-hands <plan|apply|path|clone|fresh|zone> --config FILE [--state FILE] [TARGET]
-agent-hands <hooks-plan|hooks-apply|hooks-inspect|hooks-recover> --config FILE
+agent-hands <hooks-plan|hooks-apply|hooks-inspect|hooks-recover|hooks-migrate> --config FILE
 plan previews paths; apply requires a trusted state file outside the workspace.
 Hook commands use the same single-target or batch configuration.
 Use hooks-inspect --evidence for an orphaned operation and hooks-recover --reconcile FILE with verified evidence.
@@ -60,7 +60,7 @@ async function apply(plan: LayoutPlan, file: string, config: string) {
     if (!committed) unlinkSync(lock);
   }
 }
-type HookCommand = 'hooks-plan' | 'hooks-apply' | 'hooks-inspect' | 'hooks-recover';
+type HookCommand = 'hooks-plan' | 'hooks-apply' | 'hooks-inspect' | 'hooks-recover' | 'hooks-migrate';
 type HookTarget = Exclude<WorkspaceHookScope['target'], 'opencode'>;
 class HookCliError extends Error {}
 
@@ -110,12 +110,16 @@ function runHookCommand(command: HookCommand, args: string[]) {
   if (command === 'hooks-plan') return planWorkspaceHooks(input);
   if (command === 'hooks-apply') return applyWorkspaceHooks(input);
 
-  const {root} = input;
-  const pending = inspectWorkspaceHookOperation({root,accountHome,evidence:values.evidence || values.reconcile !== undefined});
+  const {root,stateLocation} = input;
+  if (command === 'hooks-migrate') {
+    if (stateLocation === undefined) throw new HookCliError('Select a destination stateLocation for migration');
+    return migrateWorkspaceHookState({root,stateLocation,accountHome});
+  }
+  const pending = inspectWorkspaceHookOperation({root,stateLocation,accountHome,evidence:values.evidence || values.reconcile !== undefined});
   if (command === 'hooks-inspect') {
     if (pending.pending || pending.blockedBy) return pending;
     const ownership = targets.map(target => {
-      const receipt = inspectWorkspaceHookOwnership({root, target});
+      const receipt = inspectWorkspaceHookOwnership({root,stateLocation,target});
       return {target, ownership: receipt && {owners: receipt.owners.length, released: receipt.released.length}};
     });
     return {...pending, ownership};
@@ -137,14 +141,14 @@ function runHookCommand(command: HookCommand, args: string[]) {
     try { reconcile = json(values.reconcile) as WorkspaceHookReconciliation; }
     catch { throw new HookCliError('Cannot read hook reconciliation evidence as JSON'); }
   }
-  recoverWorkspaceHooks({root,targets,accountHome,reconcile});
+  recoverWorkspaceHooks({root,stateLocation,targets,accountHome,reconcile});
   return {recovered:true};
 }
 
 async function main() {
   const [command,...args] = process.argv.slice(2);
   if (command === '--help' || command === 'help') { console.log(usage); return 0; }
-  if (command === 'hooks-plan' || command === 'hooks-apply' || command === 'hooks-inspect' || command === 'hooks-recover') {
+  if (command === 'hooks-plan' || command === 'hooks-apply' || command === 'hooks-inspect' || command === 'hooks-recover' || command === 'hooks-migrate') {
     try {
       console.log(JSON.stringify(runHookCommand(command,args)));
       return 0;

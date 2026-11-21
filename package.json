@@ -53,7 +53,7 @@
     "docs/reference/*.md",
     "examples/hooks.mjs"
   ],
-  "version": "0.1.0",
+  "version": "0.1.1",
   "bin": {
     "agent-hands": "bin/agent-hands.js"
   }

@@ -1,5 +1,5 @@
 import { preferences, preferencePath } from './preferences.js';
-import { plugin, registrationFiles, registrationPath, inspectProjectRegistration } from './plugin.js';
+import { plugin, registrationFiles, registrationPath, inspectProjectRegistration, verifyRegistrationReceipt } from './plugin.js';
 export declare const hooks: {
     path: string;
     preferences: typeof preferences;
@@ -8,6 +8,7 @@ export declare const hooks: {
     registrationFiles: typeof registrationFiles;
     registrationPath: typeof registrationPath;
     inspectProjectRegistration: typeof inspectProjectRegistration;
+    verifyRegistrationReceipt: typeof verifyRegistrationReceipt;
     matches: (a: import("../../../hooks/format.js").Fields, b: import("../../../hooks/format.js").Fields) => boolean;
     append: (list: unknown[], entry: import("../../../hooks/hook-plan.js").HookEntry) => void;
     empty: () => import("../../../hooks/format.js").Fields;

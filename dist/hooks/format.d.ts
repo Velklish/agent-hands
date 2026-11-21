@@ -4,21 +4,22 @@ import type { TargetChange } from './hook-journal.js';
 import type { ExternalHookChange } from './hook-operation.js';
 export type Fields = Record<string, unknown>;
 export interface HookFormat {
-    preferences?(root: string, wanted: WorkspacePreferences, legacy?: WorkspacePreferences): {
+    preferences?(local: string, wanted: WorkspacePreferences, legacy?: WorkspacePreferences): {
         projectDocument: (text: string | null, original: string | null) => string | null;
         change: () => TargetChange;
         diagnostics: readonly WorkspaceHookDiagnostic[];
     };
-    preferencePath?(root: string): string;
-    plugin?(root: string, settings: TargetChange, input: WorkspaceRegistration): {
+    preferencePath?(local: string): string;
+    plugin?(root: string, local: string, settings: TargetChange, input: WorkspaceRegistration): {
         changes: TargetChange[];
         steps: ExternalHookChange[];
         checkSource: () => void;
         registration: WorkspaceRegistrationPlan;
     };
-    registrationFiles?(root: string, home: string): string[];
-    registrationPath?(root: string): string;
-    inspectProjectRegistration?(input: WorkspaceRegistrationInspection): WorkspaceRegistrationStatus;
+    registrationFiles?(root: string, home: string, local: string): string[];
+    registrationPath?(local: string): string;
+    inspectProjectRegistration?(input: WorkspaceRegistrationInspection, local: string): WorkspaceRegistrationStatus;
+    verifyRegistrationReceipt?(root: string, home: string | undefined, local: string): void;
     path: string;
     empty(): Fields;
     accepts(shell: Fields): boolean;

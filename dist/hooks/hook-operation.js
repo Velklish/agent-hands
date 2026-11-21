@@ -15,6 +15,13 @@ function exclusive(scope, run) {
     const files = [...targets, ...pointers];
     if (new Set(files).size !== files.length || files.some(p => path.resolve(p) !== p || p === directory || p.startsWith(directory + path.sep)))
         throw new Error('Overlapping operation scope');
+    scope.checkLocation?.();
+    return withHookStateLock(directory, () => {
+        scope.checkLocation?.();
+        return run(path.join(directory, 'pending.json'));
+    });
+}
+export function withHookStateLock(directory, run, moving = false) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     const stat = lstatSync(directory);
     if (realpathSync(directory) !== directory || !stat.isDirectory() || (process.platform !== 'win32' && ((stat.mode & 0o077) || stat.uid !== process.getuid?.())))
@@ -25,9 +32,11 @@ function exclusive(scope, run) {
         throw new Error('Invalid operation lock');
     const db = new DatabaseSync(lock);
     try {
+        // The lock database holds no application data. A move must not strand a path-bound SQLite journal.
+        if (moving)
+            db.exec('PRAGMA journal_mode=MEMORY');
         db.exec('BEGIN EXCLUSIVE');
-        const file = path.join(directory, 'pending.json');
-        const result = run(file);
+        const result = run();
         if (result instanceof Promise)
             return result.finally(() => db.close());
         db.close();

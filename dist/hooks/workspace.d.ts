@@ -1,6 +1,6 @@
 import { type Target } from '../layout/adapter.js';
 import { type WorkspaceParticipant } from './hook-operation.js';
-import type { WorkspaceHookDiagnostic, WorkspacePreferences, WorkspaceRegistration, WorkspaceRegistrationPlan, WorkspaceRegistrationOutcome, WorkspaceRegistrationInspection, WorkspaceRegistrationStatus } from './options.js';
+import type { WorkspaceHookDiagnostic, WorkspacePreferences, WorkspaceRegistration, WorkspaceRegistrationPlan, WorkspaceRegistrationOutcome, WorkspaceRegistrationInspection, WorkspaceRegistrationStatus, WorkspaceHookStateLocation, WorkspaceHookStateScope } from './options.js';
 export interface WorkspaceHook {
     owner: string;
     event: string;
@@ -8,8 +8,7 @@ export interface WorkspaceHook {
     matcher?: string;
     timeout?: number;
 }
-export interface WorkspaceHookScope {
-    root: string;
+export interface WorkspaceHookScope extends WorkspaceHookStateScope {
     target: Target;
 }
 export interface WorkspaceHookInput extends WorkspaceHookScope {
@@ -31,9 +30,8 @@ export interface WorkspaceHookResult {
     shifted: boolean;
     diagnostics?: readonly WorkspaceHookDiagnostic[];
 }
-export interface WorkspaceHookBatch {
-    root: string;
-    selections: readonly Omit<WorkspaceHookInput, 'root'>[];
+export interface WorkspaceHookBatch extends WorkspaceHookStateScope {
+    selections: readonly Omit<WorkspaceHookInput, keyof WorkspaceHookStateScope>[];
     accountHome?: string;
 }
 type CommandTarget = Exclude<Target, 'opencode'>;
@@ -68,12 +66,18 @@ export interface WorkspaceHookReconciliation {
         fingerprint: string;
     };
 }
-export interface WorkspaceHookBatchScope {
-    root: string;
+export interface WorkspaceHookBatchScope extends WorkspaceHookStateScope {
     targets: readonly Target[];
     accountHome?: string;
     reconcile?: WorkspaceHookReconciliation;
 }
+export interface WorkspaceHookStateMigration extends WorkspaceHookStateScope {
+    stateLocation: WorkspaceHookStateLocation;
+    accountHome?: string;
+}
+export declare function migrateWorkspaceHookState(input: WorkspaceHookStateMigration): {
+    changed: boolean;
+};
 declare const prepared: unique symbol;
 export interface PreparedWorkspaceHooks extends WorkspaceHookResult {
     readonly [prepared]: true;
@@ -113,8 +117,7 @@ export type PendingWorkspaceHooks = {
     accountScoped?: true;
     reconciliation?: WorkspaceHookReconciliationEvidence;
 };
-export declare function inspectWorkspaceHookOperation({ root, accountHome, evidence }: {
-    root: string;
+export declare function inspectWorkspaceHookOperation(input: WorkspaceHookStateScope & {
     accountHome?: string;
     evidence?: boolean;
 }): PendingWorkspaceHooks;

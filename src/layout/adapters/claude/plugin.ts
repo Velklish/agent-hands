@@ -15,28 +15,30 @@ function inProject(root:string,directory:string) {
   const relative = path.relative(root,directory);
   return !!relative && !relative.startsWith('..'+path.sep) && relative !== '..' && !path.isAbsolute(relative);
 }
-function readReceipt(raw:string, marketplace:string, plugin:string, directory?:string) {
+function readReceipt(raw:string, marketplace?:string, plugin?:string, directory?:string) {
   let prior;
   try { prior = JSON.parse(raw); } catch { throw new Error('Invalid registration receipt'); }
   if (!prior || JSON.stringify(prior) !== raw || Object.keys(prior).length !== 5 ||
-      prior.marketplace !== marketplace || prior.plugin !== plugin || typeof prior.directory !== 'string' ||
+      !validName(prior.marketplace) || !validName(prior.plugin) ||
+      (marketplace !== undefined && prior.marketplace !== marketplace) || (plugin !== undefined && prior.plugin !== plugin) ||
+      typeof prior.directory !== 'string' ||
       !path.isAbsolute(prior.directory) || path.normalize(prior.directory) !== prior.directory ||
       (directory !== undefined && prior.directory !== directory) || !validVersion(prior.version) || !validFingerprint(prior.fingerprint))
     throw new Error('Invalid registration receipt or source mismatch');
-  return prior as {directory:string;version:string;fingerprint:string};
+  return prior as {marketplace:string;plugin:string;directory:string;version:string;fingerprint:string};
 }
-export function registrationPath(root:string) {
-  return path.join(root,'.agent-hands/hooks/claude/registration.json');
+export function registrationPath(local:string) {
+  return path.join(local,'claude','registration.json');
 }
-export function registrationFiles(root:string,home:string) {
+export function registrationFiles(root:string,home:string,local:string) {
   const profile = path.join(realpathSync(home),'.claude');
-  return [path.join(profile,'plugins/known_marketplaces.json'),path.join(profile,'plugins/installed_plugins.json'),path.join(root,'.claude/settings.local.json'),path.join(profile,'settings.json'),registrationPath(root)];
+  return [path.join(profile,'plugins/known_marketplaces.json'),path.join(profile,'plugins/installed_plugins.json'),path.join(root,'.claude/settings.local.json'),path.join(profile,'settings.json'),registrationPath(local)];
 }
-export function inspectProjectRegistration(input:WorkspaceRegistrationInspection):WorkspaceRegistrationStatus {
+export function inspectProjectRegistration(input:WorkspaceRegistrationInspection,local:string):WorkspaceRegistrationStatus {
   const {root,accountHome,marketplace,plugin,expectedVersion,expectedFingerprint} = input;
   if (!validName(marketplace) || !validName(plugin) || (expectedVersion !== undefined && !validVersion(expectedVersion)) ||
       (expectedFingerprint !== undefined && !validFingerprint(expectedFingerprint))) throw new TypeError('Invalid plugin identity');
-  const [markets,installs,,,file] = registrationFiles(root,accountHome);
+  const [markets,installs,,,file] = registrationFiles(root,accountHome,local);
   const raw = snapshot(file);
   try {
     const receipt = raw === null ? undefined : readReceipt(raw,marketplace,plugin);
@@ -55,7 +57,15 @@ export function inspectProjectRegistration(input:WorkspaceRegistrationInspection
       ...observed,fingerprint:receipt.fingerprint};
   } catch { return {status:'stale'}; }
 }
-export function plugin(root:string,settings:TargetChange,input:WorkspaceRegistration) {
+export function verifyRegistrationReceipt(root:string,accountHome:string|undefined,local:string) {
+  const raw = snapshot(registrationPath(local));
+  if (raw === null) return;
+  if (!accountHome) throw new Error('Registration state requires the original hook account');
+  const {marketplace,plugin,version,fingerprint} = readReceipt(raw);
+  const status = inspectProjectRegistration({root,accountHome,marketplace,plugin,expectedVersion:version,expectedFingerprint:fingerprint},local);
+  if (status.status !== 'current') throw new Error('Unconfirmed project plugin registration');
+}
+export function plugin(root:string,local:string,settings:TargetChange,input:WorkspaceRegistration) {
   const {plugin,marketplace,version,fingerprint} = input;
   if (!validName(plugin) || !validName(marketplace) || !validVersion(version) || !validFingerprint(fingerprint)) throw new TypeError('Invalid plugin identity');
   if (![input.accountHome,input.directory,input.executable].every(v => path.isAbsolute(v) && path.normalize(v) === v)) throw new TypeError('Expected absolute plugin paths');
@@ -69,7 +79,7 @@ export function plugin(root:string,settings:TargetChange,input:WorkspaceRegistra
     if (physical !== undefined && (realpathSync(path.dirname(directory)) !== path.dirname(directory) || !lstatSync(directory).isSymbolicLink() || !lstatSync(physical).isDirectory() || realpathSync(physical) !== physical)) throw new Error('Unconfirmed plugin source alias');
     if (realpathSync(directory) !== (physical ?? directory)) throw new Error('Plugin source changed');
   };
-  const files = registrationFiles(root,home);
+  const files = registrationFiles(root,home,local);
   const changes = files.map(file => { const before = snapshot(file); return {file,before,after:before}; });
   const read = ([settings,marketplaces,installations]:readonly (string|null)[]) => ({settings,marketplaces,installations});
   const before = read([settings.before,...changes.slice(0,2).map(c => c.before)]);

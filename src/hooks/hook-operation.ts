@@ -9,6 +9,7 @@ export interface OperationScope {
   readonly directory: string;
   readonly pointers: readonly string[];
   readonly targets: readonly string[];
+  readonly checkLocation?: () => void;
 }
 
 export function assertHookOperationIdle(scope: Pick<OperationScope,'directory'|'pointers'>) {
@@ -20,6 +21,14 @@ function exclusive<T>(scope: OperationScope, run: (journal: string) => T): T {
   if (path.resolve(directory) !== directory || !pointers.length || pointers.length > 32 || targets.length > 32 || !targets.length) throw new Error('Invalid operation scope');
   const files = [...targets,...pointers];
   if (new Set(files).size !== files.length || files.some(p => path.resolve(p) !== p || p === directory || p.startsWith(directory + path.sep))) throw new Error('Overlapping operation scope');
+  scope.checkLocation?.();
+  return withHookStateLock(directory, () => {
+    scope.checkLocation?.();
+    return run(path.join(directory,'pending.json'));
+  });
+}
+
+export function withHookStateLock<T>(directory: string, run: () => T, moving = false): T {
   mkdirSync(directory,{ recursive:true, mode:0o700 });
   const stat = lstatSync(directory);
   if (realpathSync(directory) !== directory || !stat.isDirectory() || (process.platform !== 'win32' && ((stat.mode & 0o077) || stat.uid !== process.getuid?.()))) throw new Error('Private operation directory required');
@@ -28,9 +37,10 @@ function exclusive<T>(scope: OperationScope, run: (journal: string) => T): T {
   if (attr && (!attr.isFile() || attr.nlink !== 1)) throw new Error('Invalid operation lock');
   const db = new DatabaseSync(lock);
   try {
+    // The lock database holds no application data. A move must not strand a path-bound SQLite journal.
+    if (moving) db.exec('PRAGMA journal_mode=MEMORY');
     db.exec('BEGIN EXCLUSIVE');
-    const file = path.join(directory,'pending.json');
-    const result = run(file);
+    const result = run();
     if (result instanceof Promise) return result.finally(() => db.close()) as T;
     db.close();
     return result;

@@ -2,7 +2,7 @@
 
 ## From the CLI
 
-Use the same JSON file with `hooks-plan`, `hooks-apply`, `hooks-inspect` and `hooks-recover`. Pass it with `--config FILE`. For one target, use the JavaScript example's `input` as JSON. For several targets, use a single `root` and a `selections` array with one entry per target. The [bundled example](../../examples/hooks.mjs) writes a complete batch file.
+Use the same JSON file with `hooks-plan`, `hooks-apply`, `hooks-inspect` and `hooks-recover`. Pass it with `--config FILE`. For one target, use the JavaScript example's `input` as JSON. For several targets, use a single `root` and a `selections` array with one entry per target. The [bundled example](../../examples/hooks.mjs) writes a complete batch file. Set `stateLocation` at the top level. Use `hooks-migrate --config FILE` with the destination selected to move existing state.
 
 `hooks-plan` and `hooks-apply` report `changed` and `shifted`. The CLI derives native paths and ownership files from the root and selected harnesses. `hooks-inspect` reports pending targets and whether registration was involved. With no pending operation, it reports the count of owned and released callbacks per target, or `null` when a target has no receipt. Command strings, settings and owner identifiers are omitted from CLI output.
 
@@ -18,6 +18,12 @@ target. A decision is `{target, action: "accept"}`, `{target, action: "release",
 ## From JavaScript
 
 Import the hook operations from `agent-hands`. Select `claude`, `codex` or `cursor`. OpenCode uses a plugin lifecycle and does not support this command-hook operation. Layout delivery does not enable hooks.
+
+A single request or an entire batch can set `stateLocation: "agents"` to keep workspace hook
+state in `.agents/agent-hands/hooks/`. Omit the option or set it to `"default"` to use
+`.agent-hands/hooks/`. Use the same selection for planning, application, ownership and
+registration inspection, and recovery. Native harness settings and the shared account lock,
+journal and pointer stay at their usual paths.
 
 ```js
 import { applyWorkspaceHooks, planWorkspaceHooks } from 'agent-hands';
@@ -43,6 +49,25 @@ refuses ambiguous matches. It leaves other owners and callbacks in place.
 For several targets, pass `{root, selections: [{target, enabled, hooks}, ...]}` to the same operations. The package plans every selected document before applying any of them. Confirmed history identifies each callback by its exact previous condition and value, not by its command alone. For migration, supply `legacy: {documentSha256, hooks, preferences?}` only after verifying the previous owner's receipt. The digest must match the complete document bytes, and each claimed callback must match one unique physical entry. Do not infer legacy ownership from a matching command.
 
 A batch can specify an absolute `accountHome` to use the same account lock as plugin registration. When a selection also requests registration, the two account paths must resolve to the same directory. Use the original account with inspection and recovery. A pending account-scoped batch without registration reports `accountScoped: true`.
+
+## Move existing hook state
+
+Stop hook writers for the workspace, then call
+`migrateWorkspaceHookState({root, stateLocation: "agents", accountHome})`. The call moves the
+confirmed receipts in a single directory rename under the workspace writer lock. Both
+locations must be on the same filesystem. If any account-scoped operation may exist, supply
+its original `accountHome`. The operation locks that account as well. Standalone projects
+that have only used workspace transactions can omit `accountHome`.
+
+The move refuses a pending journal or pointer, conflicting locations, or unrecognized state.
+Recover pending work from the original location before retrying. `{changed: false}` means
+there was no tree to move. Planning and inspection only read the selected location. They
+refuse a competing tree so they cannot mistake missing receipts for unowned hooks.
+
+To roll back to v0.1.0, stop writers, recover pending work, then run the v0.1.1 migration
+with `stateLocation: "default"` and the same account. Switch package versions only after
+that succeeds. A v0.1.0 process cannot discover the nested location, and switching versions
+alone does not move or reattach its receipts.
 
 ## Composing a transaction
 

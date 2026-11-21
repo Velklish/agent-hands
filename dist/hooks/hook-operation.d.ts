@@ -3,8 +3,10 @@ export interface OperationScope {
     readonly directory: string;
     readonly pointers: readonly string[];
     readonly targets: readonly string[];
+    readonly checkLocation?: () => void;
 }
 export declare function assertHookOperationIdle(scope: Pick<OperationScope, 'directory' | 'pointers'>): void;
+export declare function withHookStateLock<T>(directory: string, run: () => T, moving?: boolean): T;
 export declare function withAccountLock<T>(home: string | undefined, scope: OperationScope, run: () => T): T;
 export declare function findHookOperation(directory: string, pointers: readonly string[]): OperationScope | null;
 export declare function inspectOrphanedHookOperation(scope: OperationScope): {
