@@ -188,12 +188,25 @@ export function migrateWorkspaceHookState(input) {
             verifyHookState(base, source, account);
         else if (hasDestination)
             verifyHookState(base, destination, account);
-        return hasSource;
+        return { hasSource, hasDestination };
     };
-    if (!preflight())
+    const clearEmptySourceParent = () => {
+        try {
+            rmdirSync(path.dirname(source));
+        }
+        catch (error) {
+            if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error.code ?? ''))
+                throw error;
+        }
+    };
+    const before = preflight();
+    if (!before.hasSource) {
+        if (before.hasDestination)
+            clearEmptySourceParent();
         return { changed: false };
+    }
     const move = () => {
-        if (!preflight())
+        if (!preflight().hasSource)
             throw new Error('Hook state changed during migration');
         const parent = path.dirname(destination);
         mkdirSync(parent, { recursive: true, mode: 0o700 });
@@ -204,13 +217,7 @@ export function migrateWorkspaceHookState(input) {
         return { changed: true };
     };
     const result = withHookStateLock(sourceScope.directory, () => account ? withHookStateLock(shared.directory, move) : move(), true);
-    try {
-        rmdirSync(path.dirname(source));
-    }
-    catch (error) {
-        if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error.code ?? ''))
-            throw error;
-    }
+    clearEmptySourceParent();
     return result;
 }
 const plans = new WeakMap();

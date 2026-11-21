@@ -202,11 +202,21 @@ export function migrateWorkspaceHookState(input:WorkspaceHookStateMigration):{ch
     assertHookOperationIdle(shared);
     if (hasSource) verifyHookState(base,source,account);
     else if (hasDestination) verifyHookState(base,destination,account);
-    return hasSource;
+    return {hasSource,hasDestination};
   };
-  if (!preflight()) return {changed:false};
+  const clearEmptySourceParent = () => {
+    try { rmdirSync(path.dirname(source)); }
+    catch (error) {
+      if (!['ENOENT','ENOTEMPTY','EEXIST'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
+    }
+  };
+  const before = preflight();
+  if (!before.hasSource) {
+    if (before.hasDestination) clearEmptySourceParent();
+    return {changed:false};
+  }
   const move = () => {
-    if (!preflight()) throw new Error('Hook state changed during migration');
+    if (!preflight().hasSource) throw new Error('Hook state changed during migration');
     const parent = path.dirname(destination);
     mkdirSync(parent,{recursive:true,mode:0o700});
     physicalDirectory(base,parent);
@@ -215,10 +225,7 @@ export function migrateWorkspaceHookState(input:WorkspaceHookStateMigration):{ch
     return {changed:true};
   };
   const result = withHookStateLock(sourceScope.directory,() => account ? withHookStateLock(shared.directory,move) : move(),true);
-  try { rmdirSync(path.dirname(source)); }
-  catch (error) {
-    if (!['ENOENT','ENOTEMPTY','EEXIST'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
-  }
+  clearEmptySourceParent();
   return result;
 }
 

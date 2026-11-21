@@ -133,3 +133,22 @@ test('moving refuses competing, foreign, and edited state without altering metad
     assert.deepEqual(fs.readFileSync(document),settings);
   }
 });
+
+test('retry after an interrupted rename clears the empty previous state parent',t=>{
+  const root = fs.realpathSync(scratch(t));
+  applyWorkspaceHooks({root,...codex});
+  const destination = path.join(root,nested);
+  const child = spawnSync(process.execPath,['--input-type=module','-e',`
+    import fs from 'node:fs';
+    import {syncBuiltinESMExports} from 'node:module';
+    import {migrateWorkspaceHookState} from 'agent-hands';
+    const rename=fs.renameSync;
+    fs.renameSync=(from,to)=>{rename(from,to);if(to===process.argv[2])process.exit(74);};
+    syncBuiltinESMExports();
+    migrateWorkspaceHookState({root:process.argv[1],stateLocation:'agents'});
+  `,root,destination],{encoding:'utf8'});
+  assert.equal(child.status,74,child.stderr);
+  assert.deepEqual(inspectWorkspaceHookOwnership({root,target:'codex',stateLocation:'agents'}),{owners:['notice'],released:[]});
+  assert.deepEqual(migrateWorkspaceHookState({root,stateLocation:'agents'}),{changed:false});
+  assert.equal(fs.existsSync(path.join(root,'.agent-hands')),false);
+});

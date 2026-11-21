@@ -61,7 +61,8 @@ that have only used workspace transactions can omit `accountHome`.
 
 The move refuses a pending journal or pointer, conflicting locations, or unrecognized state.
 Recover pending work from the original location before retrying. `{changed: false}` means
-there was no tree to move. Planning and inspection only read the selected location. They
+there was no tree to move. A retry can clean up the empty previous directory after an
+interrupted move. Planning and inspection only read the selected location. They
 refuse a competing tree so they cannot mistake missing receipts for unowned hooks.
 
 To roll back to v0.1.0, stop writers, recover pending work, then run the v0.1.1 migration
