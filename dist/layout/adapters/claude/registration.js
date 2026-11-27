@@ -44,16 +44,7 @@ function readSettings(text, { platform, step }) {
         throw new Error('Unsupported project settings');
     return doc;
 }
-export function pinnedRegistrationVersion({ platform, arch, binarySha256 }) {
-    const binary = platform === 'linux' ? '2e2496c9a8065df93acb0fca2d341f59a6b8777649b2e025ab8c9bcd5eef61f3'
-        : platform === 'darwin' ? '85d8c08707fcfd1e78ffa0204eefbc6ec9e4fe22f375fb2767ef85d957ed3161' : null;
-    if (binary === null || binarySha256 !== binary || arch !== 'arm64')
-        throw new Error('Unsupported registration binary');
-    return '2.1.311 (Claude Code)';
-}
 export function registrationPostcondition(request, before) {
-    if (request.version !== pinnedRegistrationVersion(request))
-        throw new Error('Unsupported registration binary');
     if (!name(request.marketplace) || !name(request.plugin) || !request.directory.startsWith('/') || !['add', 'install', 'update'].includes(request.step))
         throw new Error('Unsupported registration request');
     const expected = readSettings(before, request);

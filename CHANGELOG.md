@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- Allow native Claude Code plugin registration across versions on Linux arm64 and macOS arm64. Verify the executable stays unchanged during registration and validate settings and registry updates as before.
+
 ## 0.1.1
 
 - Select where workspace hook receipts and journals live and explicitly migrate existing state between the two supported locations.

@@ -61,6 +61,16 @@ const registration = (root,accountHome) => ({
   plugin:'subject',marketplace:'fixture',directory:path.join(root,'market'),executable:path.join(root,'claude'),
   version:'1.0.0',fingerprint:'a'.repeat(64),accountHome,
 });
+test('Claude registration accepts a binary without a preapproved digest', {
+  skip: process.arch !== 'arm64' || !['darwin','linux'].includes(process.platform),
+}, t => {
+  const root = realpathSync(scratch(t)), home = realpathSync(scratch(t));
+  put(root,'market/.gitkeep','');
+  writeFileSync(path.join(root,'claude'),"#!/bin/sh\nprintf '2.1.323 (Claude Code)\\n'\n",{mode:0o700});
+  assert.equal(planWorkspaceHooks({...request(root),registration:registration(root,home)}).changed,true);
+  assert.equal(snapshot(path.join(root,'.claude/settings.json')),null);
+});
+
 test('malformed settings, receipts and pending pointers refuse with sanitized errors', t => {
   for (const [file,message,check] of [
     ['.claude/settings.json','Invalid hook document',root=>applyWorkspaceHooks(request(root))],

@@ -3,7 +3,7 @@ import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { sha256 } from '../../fs.js';
 import { snapshot } from '../../../hooks/hook-journal.js';
-import { inspectRegistration, pinnedRegistrationVersion, registrationEvidence, registrationPreflight, registrationUnchanged } from './registration.js';
+import { inspectRegistration, registrationEvidence, registrationPreflight, registrationUnchanged } from './registration.js';
 const validName = (name) => typeof name === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(name) && !Object.hasOwn(Object.prototype, name);
 const validVersion = (version) => typeof version === 'string' && /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(version);
 const validFingerprint = (fingerprint) => typeof fingerprint === 'string' && /^[a-f0-9]{64}$/.test(fingerprint);
@@ -119,6 +119,8 @@ export function plugin(root, local, settings, input) {
             throw new Error('Changed plugin source requires a new version');
         return { changes, steps, checkSource, registration: { ...registration, action: 'current' } };
     }
+    if ((process.platform !== 'linux' && process.platform !== 'darwin') || process.arch !== 'arm64')
+        throw new Error('Unsupported registration platform');
     let binary, binarySha256;
     try {
         binary = realpathSync(input.executable);
@@ -129,8 +131,7 @@ export function plugin(root, local, settings, input) {
     catch {
         throw new Error('Unsupported registration binary');
     }
-    const identity = { binarySha256, platform: process.platform, arch: process.arch };
-    const request = { ...identity, version: pinnedRegistrationVersion(identity), marketplace, plugin, directory, step: current.installed ? 'update' : 'install' };
+    const request = { platform: process.platform, marketplace, plugin, directory, step: current.installed ? 'update' : 'install' };
     registrationPreflight(request, root, before);
     let versionConfirmed = false;
     const launch = (args, readVersion = false) => spawnSync(binary, args, {
@@ -146,7 +147,8 @@ export function plugin(root, local, settings, input) {
                     if (sha256(readFileSync(binary)) !== binarySha256)
                         throw new Error('Plugin binary changed');
                     const version = launch(['--version'], true);
-                    if (version.error || version.status !== 0 || version.stdout?.trim() !== config.version)
+                    const reported = version.stdout?.trim().match(/^(.+) \(Claude Code\)$/);
+                    if (version.error || version.status !== 0 || !validVersion(reported?.[1]))
                         throw new Error('Unconfirmed registration binary version');
                     versionConfirmed = true;
                 }

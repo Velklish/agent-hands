@@ -38,7 +38,7 @@ cp.spawnSync = (bin,args,options) => {
   assert.deepEqual(options.stdio,['ignore',readVersion ? 'pipe' : 'ignore','ignore']);
   if (readVersion) versionChecks++;
 
-  if (control === 'misreported' && readVersion) return {status:0,stdout:'2.1.310 (Claude Code)\n'};
+  if (control === 'misreported' && readVersion) return {status:0,stdout:'2.1.310 (Other CLI)\n'};
   if (control === 'timeout' && !readVersion) {
     const stuck = original('/bin/sh',['-c',"trap '' TERM; while :; do :; done"],
       {...options,env:optionsForFixture,timeout:500});
@@ -73,8 +73,7 @@ assert.equal(planWorkspaceHooks(input).changed,true); assert.equal(calls.length,
 const currentBytes=()=>fs.existsSync(settingsFile)?fs.readFileSync(settingsFile):null;
 const beforeInstall = currentBytes();
 if (!mode) {
-  const alternate = path.join(base,'unverified');
-  fs.writeFileSync(alternate,'unverified', {mode:0o500});
+  const alternate = path.join(base,'missing-executable');
   assert.throws(()=>applyWorkspaceHooks({...input,registration:{...registration,executable:alternate}}),/Unsupported registration binary/);
   assert.equal(versionChecks,0);
   control = 'misreported';

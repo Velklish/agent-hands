@@ -5,7 +5,7 @@ import { sha256 } from '../../fs.js';
 import { snapshot, type TargetChange } from '../../../hooks/hook-journal.js';
 import type { ExternalHookChange } from '../../../hooks/hook-operation.js';
 import type { WorkspaceRegistration, WorkspaceRegistrationPlan, WorkspaceRegistrationInspection, WorkspaceRegistrationStatus } from '../../../hooks/options.js';
-import { inspectRegistration, pinnedRegistrationVersion, registrationEvidence, registrationPreflight, registrationUnchanged, type RegistrationRequest } from './registration.js';
+import { inspectRegistration, registrationEvidence, registrationPreflight, registrationUnchanged, type RegistrationRequest } from './registration.js';
 
 const validName = (name: unknown): name is string => typeof name === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(name) && !Object.hasOwn(Object.prototype,name);
 const validVersion = (version: unknown): version is string => typeof version === 'string' && /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(version);
@@ -97,14 +97,14 @@ export function plugin(root:string,local:string,settings:TargetChange,input:Work
     if (prior.fingerprint !== fingerprint) throw new Error('Changed plugin source requires a new version');
     return {changes,steps,checkSource,registration:{...registration,action:'current' as const}};
   }
+  if ((process.platform !== 'linux' && process.platform !== 'darwin') || process.arch !== 'arm64') throw new Error('Unsupported registration platform');
   let binary: string, binarySha256: string;
   try {
     binary = realpathSync(input.executable);
     if (!lstatSync(binary).isFile()) throw new Error();
     binarySha256 = sha256(readFileSync(binary));
   } catch { throw new Error('Unsupported registration binary'); }
-  const identity = {binarySha256,platform:process.platform,arch:process.arch};
-  const request: RegistrationRequest = {...identity,version:pinnedRegistrationVersion(identity),marketplace,plugin,directory,step:current.installed?'update':'install'};
+  const request: RegistrationRequest = {platform:process.platform,marketplace,plugin,directory,step:current.installed?'update':'install'};
   registrationPreflight(request,root,before);
   let versionConfirmed = false;
   const launch = (args: string[], readVersion = false) => spawnSync(binary,args,{
@@ -119,7 +119,8 @@ export function plugin(root:string,local:string,settings:TargetChange,input:Work
       if (!versionConfirmed) {
         if (sha256(readFileSync(binary)) !== binarySha256) throw new Error('Plugin binary changed');
         const version = launch(['--version'],true);
-        if (version.error || version.status !== 0 || version.stdout?.trim() !== config.version) throw new Error('Unconfirmed registration binary version');
+        const reported = version.stdout?.trim().match(/^(.+) \(Claude Code\)$/);
+        if (version.error || version.status !== 0 || !validVersion(reported?.[1])) throw new Error('Unconfirmed registration binary version');
         versionConfirmed = true;
       }
       if (sha256(readFileSync(binary)) !== binarySha256) throw new Error('Plugin binary changed');

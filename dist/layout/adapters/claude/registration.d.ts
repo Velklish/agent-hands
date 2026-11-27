@@ -1,14 +1,10 @@
 export interface RegistrationRequest {
-    readonly binarySha256: string;
-    readonly version: string;
     readonly platform: string;
-    readonly arch: string;
     readonly marketplace: string;
     readonly directory: string;
     readonly plugin: string;
     readonly step: 'add' | 'install' | 'update';
 }
-export declare function pinnedRegistrationVersion({ platform, arch, binarySha256 }: Pick<RegistrationRequest, 'platform' | 'arch' | 'binarySha256'>): string;
 export declare function registrationPostcondition(request: RegistrationRequest, before: string): (after: string | null) => boolean;
 export interface RegistrationSnapshot {
     readonly settings: string | null;
